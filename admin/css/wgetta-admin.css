@@ -1,0 +1,288 @@
+/**
+ * Wgetta Admin Styles
+ */
+
+.wgetta-settings-container,
+.wgetta-plan-container,
+.wgetta-copy-container {
+    max-width: 1200px;
+    margin: 20px 0;
+}
+
+.wgetta-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    margin-bottom: 20px;
+    padding: 20px;
+}
+
+.wgetta-card h2 {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.wgetta-card h3 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+.wgetta-code-block {
+    display: block;
+    padding: 10px;
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.wgetta-presets {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 15px 0;
+}
+
+
+.wgetta-sidebar {
+    float: right;
+    width: 300px;
+    margin-left: 20px;
+}
+
+.wgetta-sidebar .wgetta-card {
+    padding: 15px;
+}
+
+.wgetta-sidebar h3 {
+    margin-top: 0;
+}
+
+/* Plan Page Styles */
+.wgetta-url-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    background: #f9f9f9;
+    margin: 10px 0;
+}
+
+.wgetta-url-list .url-item {
+    padding: 5px;
+    border-bottom: 1px solid #eee;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.wgetta-url-list .url-item:last-child {
+    border-bottom: none;
+}
+
+.wgetta-columns {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.wgetta-column {
+    flex: 1;
+}
+
+.wgetta-column h3 {
+    margin-top: 0;
+    padding: 10px;
+    background: #f4f4f4;
+}
+
+.wgetta-included h3 {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.wgetta-excluded h3 {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.wgetta-regex-pattern {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.wgetta-regex-pattern input {
+    flex: 1;
+}
+
+.wgetta-regex-presets {
+    margin-top: 20px;
+}
+
+.wgetta-regex-presets h4 {
+    margin-bottom: 10px;
+}
+
+.wgetta-regex-presets .button {
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+.wgetta-summary-stats {
+    display: flex;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.stat-box {
+    flex: 1;
+    padding: 15px;
+    background: #f4f4f4;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    color: #666;
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+    color: #23282d;
+}
+
+/* Copy Page Styles */
+.wgetta-pattern-list {
+    margin: 10px 0 10px 20px;
+}
+
+.wgetta-pattern-list li {
+    margin: 5px 0;
+}
+
+.wgetta-warning {
+    padding: 12px;
+}
+
+.wgetta-warning ul {
+    margin: 10px 0 0 20px;
+}
+
+.wgetta-execution-controls {
+    margin: 20px 0;
+}
+
+.wgetta-progress {
+    margin: 20px 0;
+}
+
+.wgetta-progress-bar {
+    height: 30px;
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.wgetta-progress-fill {
+    height: 100%;
+    background: #0073aa;
+    transition: width 0.3s ease;
+    width: 0;
+}
+
+.wgetta-progress-info {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.wgetta-output-console {
+    background: #23282d;
+    color: #0f0;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    height: 300px;
+    overflow-y: auto;
+    border-radius: 3px;
+}
+
+.wgetta-stats {
+    display: flex;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.wgetta-download-location,
+.wgetta-log-location {
+    margin: 20px 0;
+}
+
+.wgetta-actions {
+    margin-top: 20px;
+}
+
+.wgetta-history {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* Plan page: spacing for Dry Run controls */
+.wgetta-dry-run-section .wgetta-dry-run-controls {
+    margin-top: 15px;
+}
+
+/* Responsive */
+@media screen and (max-width: 782px) {
+    .wgetta-sidebar {
+        float: none;
+        width: 100%;
+        margin: 20px 0;
+    }
+    
+    .wgetta-columns {
+        flex-direction: column;
+    }
+    
+    .wgetta-summary-stats,
+    .wgetta-stats {
+        flex-direction: column;
+    }
+    
+    .wgetta-presets {
+        flex-direction: column;
+    }
+    
+    .wgetta-presets .button {
+        width: 100%;
+    }
+}
+
+/* Spinner alignment */
+.spinner {
+    float: none;
+    margin-left: 10px;
+}
+
+/* Status messages */
+.wgetta-status {
+    margin-left: 10px;
+    font-style: italic;
+}
+
+.wgetta-status.success {
+    color: #46b450;
+}
+
+.wgetta-status.error {
+    color: #dc3232;
+}
