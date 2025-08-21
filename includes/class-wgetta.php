@@ -35,6 +35,7 @@ class Wgetta {
         add_action('wp_ajax_wgetta_save_regex', array($this->admin, 'ajax_save_regex'));
         add_action('wp_ajax_wgetta_execute', array($this->admin, 'ajax_execute'));
         add_action('wp_ajax_wgetta_log_tail', array($this->admin, 'ajax_log_tail'));
+        add_action('wp_ajax_wgetta_history', array($this->admin, 'ajax_history'));
         
         // WP-CLI commands
         if (defined('WP_CLI') && WP_CLI) {

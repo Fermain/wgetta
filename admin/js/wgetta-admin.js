@@ -220,6 +220,9 @@
         var logPollingInterval = null;
         var currentJobId = null;
         var logOffset = 0;
+
+        // Load existing history immediately
+        fetchHistory();
         
         // Handle command execution
         $('#execute-command').on('click', function() {
@@ -363,6 +366,29 @@
                     $('#execution-history').html(html);
                 }
             }
+        }
+
+        function fetchHistory() {
+            var data = {
+                action: 'wgetta_history',
+                nonce: $('#wgetta_nonce').val()
+            };
+            $.post(wgetta_ajax.ajax_url, data, function(response) {
+                if (response && response.success && Array.isArray(response.history)) {
+                    var html = '';
+                    for (var i = 0; i < response.history.length; i++) {
+                        var h = response.history[i];
+                        html += '<div class="history-item">' +
+                            '<strong>' + (h.id || '') + '</strong>: ' + (h.status || 'unknown') +
+                            ' — files: ' + (h.files || 0) +
+                            '<br/><code>' + escapeHtml(h.path || '') + '</code>' +
+                            '</div>';
+                    }
+                    if (html) {
+                        $('#execution-history').html(html);
+                    }
+                }
+            });
         }
     }
     

@@ -498,4 +498,49 @@ class Wgetta_Admin {
         
         wp_send_json($response);
     }
+
+    /**
+     * AJAX: fetch recent execution history
+     */
+    public function ajax_history() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+        $response = array('success' => true, 'history' => array());
+        try {
+            $upload_dir = wp_upload_dir();
+            $jobs_root = $upload_dir['basedir'] . '/wgetta/jobs';
+            $history = array();
+            if (is_dir($jobs_root)) {
+                $dirs = array_filter(glob($jobs_root . '/*', GLOB_ONLYDIR), 'is_dir');
+                usort($dirs, function($a, $b) { return filemtime($b) - filemtime($a); });
+                foreach (array_slice($dirs, 0, 5) as $dir) {
+                    $sid = basename($dir);
+                    $sstatus = null;
+                    $sfile = $dir . '/status.json';
+                    if (file_exists($sfile)) {
+                        $sstatus = json_decode(file_get_contents($sfile), true);
+                    }
+                    $manifest = $dir . '/manifest.txt';
+                    $count = 0;
+                    if (file_exists($manifest)) {
+                        $count = count(array_filter(array_map('trim', explode("\n", file_get_contents($manifest)))));
+                    }
+                    $history[] = array(
+                        'id' => $sid,
+                        'status' => $sstatus ? ($sstatus['status'] ?? null) : null,
+                        'files' => $count,
+                        'path' => $dir,
+                        'modified' => filemtime($dir)
+                    );
+                }
+            }
+            $response['history'] = $history;
+        } catch (Exception $e) {
+            $response['success'] = false;
+            $response['message'] = $e->getMessage();
+        }
+        wp_send_json($response);
+    }
 }
