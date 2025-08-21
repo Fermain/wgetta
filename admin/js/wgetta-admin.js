@@ -16,6 +16,8 @@
             initPlanPage();
         } else if (currentPage === 'wgetta-copy') {
             initCopyPage();
+        } else if (currentPage === 'wgetta-plan-copy') {
+            initPlanCopyPage();
         }
         
     });
@@ -497,6 +499,257 @@
                 alert('Execution failed: ' + (response.message || 'Unknown error'));
             }
         });
+    }
+
+    /**
+     * Plan Copy Page Functions
+     */
+    function initPlanCopyPage() {
+        var currentJobId = null;
+        var currentPlan = [];
+        
+        $('#generate-plan').on('click', function() {
+            var $btn = $(this), $spin = $btn.siblings('.spinner'), $status = $('#plan-status');
+            $btn.prop('disabled', true); $spin.addClass('is-active'); $status.text('Generating plan...');
+            $.post(wgetta_ajax.ajax_url, {
+                action: 'wgetta_plan_generate',
+                nonce: $('#wgetta_nonce').val()
+            }, function(resp) {
+                $spin.removeClass('is-active'); $btn.prop('disabled', false);
+                if (resp && resp.success) {
+                    currentJobId = resp.job_id;
+                    currentPlan = resp.urls || [];
+                    buildTreeAndList(currentPlan);
+                    $status.text('Plan generated');
+                } else {
+                    $status.text(resp && resp.message ? resp.message : 'Failed to generate plan');
+                }
+            });
+        });
+
+        $('#save-plan').on('click', function() {
+            var urls = collectPlan();
+            currentPlan = urls;
+            $.post(wgetta_ajax.ajax_url, {
+                action: 'wgetta_plan_save',
+                nonce: $('#wgetta_nonce').val(),
+                job_id: currentJobId,
+                urls: urls
+            }, function(resp) {
+                showNotice(resp && resp.success ? 'success' : 'error', resp && resp.message ? resp.message : 'Save failed');
+            });
+        });
+
+        $('#save-plan-named').on('click', function() {
+            var urls = collectPlan();
+            var name = $('#plan-name').val().trim();
+            if (!name) { showNotice('error', 'Please provide a plan name'); return; }
+            $.post(wgetta_ajax.ajax_url, {
+                action: 'wgetta_plan_save_named',
+                nonce: $('#wgetta_nonce').val(),
+                name: name,
+                urls: urls
+            }, function(resp) {
+                showNotice(resp && resp.success ? 'success' : 'error', resp && resp.message ? resp.message : 'Save failed');
+                loadNamedPlans();
+            });
+        });
+
+        $('#load-plan').on('click', function() {
+            var name = $('#load-plan-select').val();
+            if (!name) return;
+            // Create a new job based on this named plan and load its URLs
+            $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_create', nonce: $('#wgetta_nonce').val(), name: name }, function(createResp){
+                if (createResp && createResp.success) {
+                    currentJobId = createResp.job_id;
+                    // Now load URLs from the named plan for editing
+                    $.post(wgetta_ajax.ajax_url, {
+                        action: 'wgetta_plan_load',
+                        nonce: $('#wgetta_nonce').val(),
+                        name: name
+                    }, function(resp) {
+                        if (resp && resp.success) {
+                            currentPlan = resp.urls || [];
+                            buildTreeAndList(currentPlan);
+                        }
+                    });
+                } else {
+                    showNotice('error', (createResp && createResp.message) ? createResp.message : 'Failed to prepare plan');
+                }
+            });
+        });
+
+        $('#execute-plan').on('click', function() {
+            var $btn = $(this), $spin = $btn.siblings('.spinner');
+            var $status = $('#plan-exec-status');
+            $.post(wgetta_ajax.ajax_url, {
+                action: 'wgetta_plan_execute',
+                nonce: $('#wgetta_nonce').val(),
+                job_id: currentJobId
+            }, function(resp) {
+                if (resp && resp.success) {
+                    $status.text('Plan execution queued (Job ' + resp.job_id + '). See Copy page for live logs.');
+                    $('#plan-execution-progress').show();
+                    $('#plan-progress-status').text('Queued');
+                    $('#plan-output-console').text('');
+                    // Start polling for summary + history similar to Copy page
+                    startPlanLogPolling(resp.job_id, $('#plan-name').val().trim());
+                } else {
+                    $status.text((resp && resp.message) ? resp.message : 'Failed to execute plan');
+                }
+            });
+        });
+
+        function startPlanLogPolling(jobId, planName) {
+            var offset = 0;
+            var interval = setInterval(function(){
+                $.post(wgetta_ajax.ajax_url, {
+                    action: 'wgetta_log_tail',
+                    nonce: $('#wgetta_nonce').val(),
+                    job_id: jobId,
+                    offset: offset
+                }, function(response){
+                    if (response && response.success) {
+                        if (response.content) {
+                            var $console = $('#plan-output-console');
+                            $console.append(escapeHtml(response.content));
+                            $console.scrollTop($console[0].scrollHeight);
+                        }
+                        offset = response.offset || offset;
+                        if (response.status) {
+                            $('#plan-progress-status').text('Status: ' + response.status.status);
+                            if (response.status.status === 'completed' || response.status.status === 'completed_with_errors' || response.status.status === 'failed' || response.status.status === 'timeout' || response.status.status === 'killed') {
+                                clearInterval(interval);
+                                $('#plan-execution-results').show();
+                                $('#plan-name-summary').text(planName || '(unsaved)');
+                                if (response.summary) {
+                                    $('#plan-files-downloaded').text(response.summary.files || 0);
+                                    var mb = (response.summary.bytes / (1024*1024)).toFixed(1);
+                                    $('#plan-total-size').text(mb + ' MB');
+                                    $('#plan-time-elapsed').text((response.summary.elapsed_seconds || 0) + 's');
+                                    $('#plan-download-path').text(response.summary.path || '');
+                                }
+                                // History
+                                if (Array.isArray(response.history)) {
+                                    var html = '';
+                                    for (var i = 0; i < response.history.length; i++) {
+                                        var h = response.history[i];
+                                        html += '<div class="history-item">' +
+                                            '<strong>' + (h.id || '') + '</strong>: ' + (h.status || 'unknown') +
+                                            ' — files: ' + (h.files || 0) +
+                                            '<br/><code>' + escapeHtml(h.path || '') + '</code>' +
+                                            '</div>';
+                                    }
+                                    if (html) $('#plan-execution-history').html(html);
+                                }
+                            }
+                        }
+                    }
+                });
+            }, 1000);
+        }
+
+        function buildTreeAndList(urls) {
+            // Build FancyTree data: one node per host, children per path segment as folders, with leaves per URL
+            var hosts = {};
+            var skipSet = {};
+            urls.forEach(function(u){
+                try {
+                    var raw = u;
+                    var isSkip = /\s+#SKIP$/.test(raw);
+                    if (isSkip) {
+                        raw = raw.replace(/\s+#SKIP$/, '');
+                        skipSet[raw] = true;
+                    }
+                    var a = document.createElement('a'); a.href = raw;
+                    var host = a.host || 'root';
+                    var parts = (a.pathname || '/').split('/').filter(Boolean);
+                    hosts[host] = hosts[host] || { title: host, folder: true, expanded: true, children: [] };
+                    var node = hosts[host];
+                    var branch = node;
+                    var pathAcc = '';
+                    for (var i2 = 0; i2 < parts.length; i2++) {
+                        pathAcc += '/' + parts[i2];
+                        var found = (branch.children || []).find(function(c){ return c.key === pathAcc; });
+                        if (!found) {
+                            found = { title: parts[i2], key: pathAcc, folder: i2 < parts.length - 1, children: [] };
+                            branch.children.push(found);
+                        }
+                        branch = found;
+                    }
+                    // attach leaf node representing the URL
+                    var leafTitle = a.pathname.replace(/\/$/, '') || a.pathname;
+                    branch.children.push({ title: leafTitle, checkbox: true, data: { url: raw } });
+                } catch(e){}
+            });
+            var source = Object.keys(hosts).map(function(h){ return hosts[h]; });
+            var $treeEl = $('#plan-tree');
+            var isInit = $treeEl.hasClass('ui-fancytree') || !!$treeEl.data('ui-fancytree') || !!$treeEl.data('fancytree');
+            if (isInit) {
+                try { $treeEl.fancytree('destroy'); } catch (e) { /* ignore */ }
+            }
+            $treeEl.empty();
+            $treeEl.fancytree({
+                checkbox: true,
+                selectMode: 3,
+                source: source,
+                extensions: ['filter'],
+                filter: { autoApply: true, counter: true, fuzzy: false, mode: 'hide' }
+            });
+            // Select leaves according to skipSet (default: selected)
+            var tree = $treeEl.fancytree('getTree');
+            tree.visit(function(n){
+                if (n.data && n.data.url) {
+                    var sel = !skipSet[n.data.url];
+                    n.setSelected(sel);
+                }
+            });
+
+            // Filter input
+            $('#plan-tree-filter').off('input').on('input', function(){
+                var tree = $treeEl.fancytree('getTree');
+                tree.filterNodes($(this).val());
+            });
+
+            // Expand/Collapse
+            $('#tree-expand-all').off('click').on('click', function(){
+                $treeEl.fancytree('getTree').expandAll(true);
+            });
+            $('#tree-collapse-all').off('click').on('click', function(){
+                $treeEl.fancytree('getTree').expandAll(false);
+            });
+        }
+
+        // No include/exclude buttons: selection directly determines which URLs are taken
+
+        function loadNamedPlans() {
+            $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_list', nonce: $('#wgetta_nonce').val() }, function(resp){
+                if (resp && resp.success) {
+                    var opts = '<option value="">Load named plan…</option>';
+                    for (var i = 0; i < resp.plans.length; i++) {
+                        var p = resp.plans[i];
+                        opts += '<option value="' + escapeHtml(p.name) + '">' + escapeHtml(p.name) + ' (' + p.count + ')</option>';
+                    }
+                    $('#load-plan-select').html(opts);
+                }
+            });
+        }
+
+        function collectPlan() {
+            // Plan tracks all URLs. Selection determines which are active.
+            var tree = $('#plan-tree').fancytree('getTree');
+            var urls = [];
+            if (!tree) return urls;
+            tree.visit(function(n){
+                if (n.data && n.data.url) {
+                    urls.push(n.data.url + (n.selected ? '' : ' #SKIP'));
+                }
+            });
+            return urls;
+        }
+
+        // Initial load of named plans
+        loadNamedPlans();
     }
     
     function showExecutionResults(data) {

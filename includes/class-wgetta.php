@@ -36,6 +36,13 @@ class Wgetta {
         add_action('wp_ajax_wgetta_execute', array($this->admin, 'ajax_execute'));
         add_action('wp_ajax_wgetta_log_tail', array($this->admin, 'ajax_log_tail'));
         add_action('wp_ajax_wgetta_history', array($this->admin, 'ajax_history'));
+        add_action('wp_ajax_wgetta_plan_generate', array($this->admin, 'ajax_plan_generate'));
+        add_action('wp_ajax_wgetta_plan_save', array($this->admin, 'ajax_plan_save'));
+        add_action('wp_ajax_wgetta_plan_execute', array($this->admin, 'ajax_plan_execute'));
+        add_action('wp_ajax_wgetta_plan_list', array($this->admin, 'ajax_plan_list'));
+        add_action('wp_ajax_wgetta_plan_load', array($this->admin, 'ajax_plan_load'));
+        add_action('wp_ajax_wgetta_plan_save_named', array($this->admin, 'ajax_plan_save_named'));
+        add_action('wp_ajax_wgetta_plan_create', array($this->admin, 'ajax_plan_create'));
         
         // WP-CLI commands
         if (defined('WP_CLI') && WP_CLI) {
@@ -44,6 +51,7 @@ class Wgetta {
         
         // Cron job for background execution
         add_action('wgetta_execute_job', array($this, 'execute_background_job'), 10, 2);
+        add_action('wgetta_execute_plan_job', array($this, 'execute_plan_job'), 10, 1);
     }
     
     /**
@@ -206,6 +214,81 @@ class Wgetta {
         } catch (Exception $e) {
             // Job will be marked as failed by the runner
             error_log('Wgetta background job failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Background plan executor - reads plan.csv and downloads each URL sequentially
+     */
+    public function execute_plan_job($job_id) {
+        try {
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            $runner = new Wgetta_Job_Runner();
+            $runner->set_job($job_id);
+
+            // Load plan
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $plan_file = $job_dir . '/plan.csv';
+            if (!file_exists($plan_file)) {
+                throw new RuntimeException('Plan not found');
+            }
+            $urls = array_filter(array_map('trim', explode("\n", file_get_contents($plan_file))));
+
+            // Prepare base argv from saved command (strip URL tokens and recursion/filter flags)
+            $cmd = get_option('wgetta_cmd', '');
+            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            $base = array();
+            $remove_no_value = array(
+                '--recursive','-r','--mirror','-m','--span-hosts','-H','--spider',
+                '--page-requisites','-p','--convert-links','-k','--backup-converted','-K',
+                '--delete-after'
+            );
+            $remove_with_value = array(
+                '--level','--domains','--exclude-domains','--accept','--reject',
+                '--accept-regex','--reject-regex','--input-file','-i','--adjust-extension','-E'
+            );
+            for ($i = 0; $i < count($argv); $i++) {
+                $tok = $argv[$i];
+                // Skip URLs entirely
+                if (preg_match('#^https?://#i', $tok)) { continue; }
+                // Handle long opts with =value
+                $opt_name = $tok;
+                if (strpos($tok, '=') !== false && substr($tok, 0, 2) === '--') {
+                    $opt_name = substr($tok, 0, strpos($tok, '='));
+                }
+                // Remove flags that would broaden the download beyond the explicit plan
+                if (in_array($tok, $remove_no_value, true) || in_array($opt_name, $remove_no_value, true)) { continue; }
+                if (in_array($tok, $remove_with_value, true) || in_array($opt_name, $remove_with_value, true)) {
+                    // Skip this option; also skip next token if value provided as separate arg and no '=' was used
+                    if (strpos($tok, '=') === false) { $i++; }
+                    continue;
+                }
+                $base[] = $tok;
+            }
+
+            // Disable robots fetching to avoid implicit robots.txt download
+            $base[] = '-e';
+            $base[] = 'robots=off';
+            // Ensure directory structure (host/path) is created for each URL
+            $base[] = '--force-directories';
+
+            // Execute each URL
+            // De-duplicate planned URLs after stripping #SKIP markers
+            $seen = array();
+            foreach ($urls as $url) {
+                // Skip entries marked as '#SKIP'
+                if (strpos($url, ' #SKIP') !== false) { continue; }
+                $clean = trim($url);
+                if (isset($seen[$clean])) { continue; }
+                $seen[$clean] = true;
+                $runner->run(array_merge($base, array($clean)));
+            }
+
+            // Manifest
+            $runner->generate_manifest();
+        } catch (Exception $e) {
+            error_log('Wgetta plan job failed: ' . $e->getMessage());
         }
     }
 }

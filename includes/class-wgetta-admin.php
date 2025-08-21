@@ -52,6 +52,15 @@ class Wgetta_Admin {
             'wgetta-copy',
             array($this, 'display_copy_page')
         );
+
+        add_submenu_page(
+            'wgetta',
+            'Plan Copy',
+            'Plan Copy',
+            'manage_options',
+            'wgetta-plan-copy',
+            array($this, 'display_plan_copy_page')
+        );
     }
     
     /**
@@ -96,6 +105,23 @@ class Wgetta_Admin {
                 'nonce' => wp_create_nonce('wgetta_ajax_nonce')
             )
         );
+
+        // Load FancyTree assets on Plan Copy page only
+        if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
+            wp_enqueue_style(
+                'fancytree-css',
+                'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/skin-win8/ui.fancytree.min.css',
+                array(),
+                '2'
+            );
+            wp_enqueue_script(
+                'fancytree-js',
+                'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/jquery.fancytree-all-deps.min.js',
+                array('jquery'),
+                '2',
+                true
+            );
+        }
     }
     
     /**
@@ -117,6 +143,10 @@ class Wgetta_Admin {
      */
     public function display_copy_page() {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-copy.php';
+    }
+    
+    public function display_plan_copy_page() {
+        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-plan-copy.php';
     }
     
     /**
@@ -390,6 +420,177 @@ class Wgetta_Admin {
         }
         
         wp_send_json($response);
+    }
+
+    /**
+     * Generate plan from dry run and current exclusions
+     */
+    public function ajax_plan_generate() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $cmd = get_option('wgetta_cmd', '');
+            if (empty($cmd)) { throw new RuntimeException('No command configured'); }
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv(Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd));
+            $runner = new Wgetta_Job_Runner();
+            $job_id = $runner->create_job('plan');
+            $runner->run($argv);
+            $urls = $runner->extract_urls();
+            // Apply saved patterns (server-side OR semantics)
+            $patterns = get_option('wgetta_regex_patterns', array());
+            if (is_array($patterns)) { $patterns = array_map('trim', $patterns); }
+            $filtered = array();
+            foreach ($urls as $u) {
+                $match = false;
+                foreach ($patterns as $p) {
+                    if ($p !== '' && Wgetta_Job_Runner::wgetta_posix_match($p, $u)) { $match = true; break; }
+                }
+                if (!$match) { $filtered[] = $u; }
+            }
+            // Save plan.csv
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            file_put_contents($job_dir . '/plan.csv', implode("\n", $filtered));
+            $resp['success'] = true; $resp['job_id'] = $job_id; $resp['urls'] = $filtered;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Save edited plan */
+    public function ajax_plan_save() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            $urls = isset($_POST['urls']) ? array_map('trim', (array) $_POST['urls']) : array();
+            if (!$job_id) { throw new RuntimeException('Missing job'); }
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            if (!is_dir($job_dir)) { throw new RuntimeException('Job not found'); }
+            // Persist planned URLs as provided (use trailing #SKIP marker to denote unchecked items)
+            file_put_contents($job_dir . '/plan.csv', implode("\n", array_filter($urls)));
+            $resp['success'] = true; $resp['message'] = 'Plan saved';
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Execute plan */
+    public function ajax_plan_execute() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            if (!$job_id) {
+                // If no job, create a new plan job using current plan name (optional)
+                $job_id = $this->create_empty_plan_job();
+            }
+            // Schedule background plan job
+            if (!wp_next_scheduled('wgetta_execute_plan_job', array($job_id))) {
+                wp_schedule_single_event(time(), 'wgetta_execute_plan_job', array($job_id));
+            }
+            $resp['success'] = true; $resp['job_id'] = $job_id;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Create an empty plan job dir (used when executing a loaded named plan) */
+    private function create_empty_plan_job() {
+        require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+        $runner = new Wgetta_Job_Runner();
+        return $runner->create_job('plan');
+    }
+
+    /** Create plan job from named plan */
+    public function ajax_plan_create() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $name = isset($_POST['name']) ? sanitize_file_name($_POST['name']) : '';
+            if ($name === '') { throw new RuntimeException('Missing plan name'); }
+            $upload_dir = wp_upload_dir();
+            $plan_file = trailingslashit($upload_dir['basedir']) . 'wgetta/plans/' . $name . '.csv';
+            if (!file_exists($plan_file)) { throw new RuntimeException('Plan not found'); }
+            // Create a new plan job and copy plan.csv into it
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            $runner = new Wgetta_Job_Runner();
+            $job_id = $runner->create_job('plan');
+            $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . $job_id;
+            copy($plan_file, $job_dir . '/plan.csv');
+            $resp['success'] = true; $resp['job_id'] = $job_id;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** List saved named plans */
+    public function ajax_plan_list() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => true, 'plans' => array());
+        $upload_dir = wp_upload_dir();
+        $plan_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/plans';
+        if (is_dir($plan_dir)) {
+            foreach (glob($plan_dir . '/*.csv') as $file) {
+                $resp['plans'][] = array(
+                    'name' => basename($file, '.csv'),
+                    'modified' => filemtime($file),
+                    'count' => count(array_filter(array_map('trim', explode("\n", file_get_contents($file)))))
+                );
+            }
+        }
+        wp_send_json($resp);
+    }
+
+    /** Load a named plan */
+    public function ajax_plan_load() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $name = isset($_POST['name']) ? sanitize_file_name($_POST['name']) : '';
+        $resp = array('success' => false);
+        try {
+            if ($name === '') { throw new RuntimeException('Missing plan name'); }
+            $upload_dir = wp_upload_dir();
+            $plan_file = trailingslashit($upload_dir['basedir']) . 'wgetta/plans/' . $name . '.csv';
+            if (!file_exists($plan_file)) { throw new RuntimeException('Plan not found'); }
+            $urls = array_filter(array_map('trim', explode("\n", file_get_contents($plan_file))));
+            $resp['success'] = true; $resp['urls'] = $urls; $resp['name'] = $name;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Save current plan under a name */
+    public function ajax_plan_save_named() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $name = isset($_POST['name']) ? sanitize_file_name($_POST['name']) : '';
+        $urls = isset($_POST['urls']) ? array_map('trim', (array) $_POST['urls']) : array();
+        $resp = array('success' => false);
+        try {
+            if ($name === '') { throw new RuntimeException('Missing plan name'); }
+            $upload_dir = wp_upload_dir();
+            $plan_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/plans';
+            if (!wp_mkdir_p($plan_dir)) { throw new RuntimeException('Failed to create plans directory'); }
+            $plan_file = $plan_dir . '/' . $name . '.csv';
+            file_put_contents($plan_file, implode("\n", array_filter($urls)));
+            $resp['success'] = true; $resp['message'] = 'Plan saved';
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
     }
     
     /**
