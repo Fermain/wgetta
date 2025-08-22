@@ -34,7 +34,7 @@ class Wgetta_Admin {
             'wgetta-plan-copy',
             array($this, 'display_plan_copy_page')
         );
-
+        
         add_submenu_page(
             'wgetta-plan-copy',
             'Run Plan',
@@ -43,14 +43,23 @@ class Wgetta_Admin {
             'wgetta-plan-run',
             array($this, 'display_plan_run_page')
         );
+        
+        add_submenu_page(
+            'wgetta-plan-copy',
+            'GitLab Deploy',
+            'GitLab Deploy',
+            'manage_options',
+            'wgetta-gitlab-deploy',
+            array($this, 'display_git_deploy_page')
+        );
 
         add_submenu_page(
             'wgetta-plan-copy',
-            'History',
-            'History',
+            'GitLab Settings',
+            'GitLab Settings',
             'manage_options',
-            'wgetta-history',
-            array($this, 'display_history_page')
+            'wgetta-gitlab-settings',
+            array($this, 'display_git_settings_page')
         );
     }
     
@@ -136,8 +145,320 @@ class Wgetta_Admin {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-run.php';
     }
 
-    public function display_history_page() {
-        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-history.php';
+    public function display_history_page() {}
+
+    public function display_git_deploy_page() {
+        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-git.php';
+    }
+
+    public function display_git_settings_page() {
+        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-git-settings.php';
+    }
+
+    /** Save GitLab settings */
+    public function ajax_git_save() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $url = isset($_POST['url']) ? sanitize_text_field($_POST['url']) : '';
+        $project = isset($_POST['project_id']) ? sanitize_text_field($_POST['project_id']) : '';
+        $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
+        $include_meta = isset($_POST['include_meta']) && $_POST['include_meta'] ? 1 : 0;
+        $committer_name = isset($_POST['committer_name']) ? sanitize_text_field($_POST['committer_name']) : '';
+        $committer_email = isset($_POST['committer_email']) ? sanitize_email($_POST['committer_email']) : '';
+        $branch_template = isset($_POST['branch_template']) ? sanitize_text_field($_POST['branch_template']) : '';
+        update_option('wgetta_gitlab', array(
+            'url' => $url,
+            'project_id' => $project,
+            'token' => $token,
+            'include_meta' => $include_meta,
+            'committer_name' => $committer_name,
+            'committer_email' => $committer_email,
+            'branch_template' => ($branch_template !== '' ? $branch_template : 'wgetta/{plan_name}')
+        ));
+        wp_send_json(array('success' => true));
+    }
+
+    /** Dry-run deploy: just echo what we'd commit */
+    public function ajax_git_deploy_dry() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            if (!$job_id) { throw new RuntimeException('Missing job'); }
+            $upload_dir = wp_upload_dir();
+            $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . $job_id;
+            if (!is_dir($job_dir)) { throw new RuntimeException('Job not found'); }
+            $resp['success'] = true;
+            $resp['job_dir'] = $job_dir;
+            $resp['output'] = 'Would run: git clone <project> && rsync ' . $job_dir . '/ -> repo && git add -A && git commit && git push';
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Push deploy (scaffold): validate and return success */
+    public function ajax_git_deploy_push() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            if ($job_id === '' || strpos($job_id, 'job_') !== 0) { throw new RuntimeException('Missing job'); }
+            $upload_dir = wp_upload_dir();
+            $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . $job_id;
+            if (!is_dir($job_dir)) { throw new RuntimeException('Job not found'); }
+
+            // Ensure git is available
+            $gitCheck = $this->run_cmd(array('git', '--version'));
+            if ($gitCheck['code'] !== 0) { throw new RuntimeException('git not available on server'); }
+
+            // Load GitLab settings
+            $settings = get_option('wgetta_gitlab', array('url' => '', 'project_id' => '', 'token' => ''));
+            $baseUrl = isset($settings['url']) ? rtrim($settings['url'], '/') : '';
+            $projectId = isset($settings['project_id']) ? $settings['project_id'] : '';
+            $token = isset($settings['token']) ? $settings['token'] : '';
+            if ($baseUrl === '' || $projectId === '' || $token === '') { throw new RuntimeException('GitLab settings incomplete'); }
+
+            // Fetch project to get repo URL and default branch
+            $api = $baseUrl . '/api/v4/projects/' . rawurlencode($projectId);
+            $res = wp_remote_get($api, array('headers' => array('PRIVATE-TOKEN' => $token), 'timeout' => 15));
+            if (is_wp_error($res)) { throw new RuntimeException($res->get_error_message()); }
+            $code = wp_remote_retrieve_response_code($res);
+            if ($code < 200 || $code >= 300) { throw new RuntimeException('GitLab API HTTP ' . $code); }
+            $proj = json_decode(wp_remote_retrieve_body($res), true);
+            $http_repo = isset($proj['http_url_to_repo']) ? $proj['http_url_to_repo'] : '';
+            $default_branch = isset($proj['default_branch']) ? $proj['default_branch'] : 'main';
+            if ($http_repo === '') { throw new RuntimeException('Project repo URL missing'); }
+
+            // Build credentialed remote URL (mask token in logs later)
+            $parts = wp_parse_url($http_repo);
+            if (!$parts || !isset($parts['scheme']) || !isset($parts['host'])) { throw new RuntimeException('Invalid repo URL'); }
+            $cred = 'oauth2:' . rawurlencode($token) . '@';
+            $remote = $parts['scheme'] . '://' . $cred . $parts['host'] . (isset($parts['port']) ? (':' . $parts['port']) : '') . (isset($parts['path']) ? $parts['path'] : '');
+
+            // Create temp workdir under uploads to avoid perms issues
+            $work_root = trailingslashit($upload_dir['basedir']) . 'wgetta/tmp';
+            if (!wp_mkdir_p($work_root)) { throw new RuntimeException('Failed to create tmp directory'); }
+            $repo_dir = $work_root . '/repo_' . uniqid();
+            if (!wp_mkdir_p($repo_dir)) { throw new RuntimeException('Failed to prepare repo directory'); }
+
+            $log = array();
+            $mask = $token;
+
+            // Clone shallow
+            $res1 = $this->run_cmd(array('git', 'clone', '--depth', '1', $remote, $repo_dir));
+            $log[] = $res1['out'];
+            if ($res1['code'] !== 0) { throw new RuntimeException('git clone failed'); }
+
+            // Ensure committer identity (local repo only)
+            $site_host = parse_url(home_url('/'), PHP_URL_HOST);
+            if (!is_string($site_host) || $site_host === '') { $site_host = 'localhost'; }
+            // Use configured committer if provided
+            $author_name = isset($settings['committer_name']) && $settings['committer_name'] !== '' ? $settings['committer_name'] : get_bloginfo('name');
+            if (!is_string($author_name) || $author_name === '') { $author_name = 'Wgetta'; }
+            $author_email = isset($settings['committer_email']) && is_email($settings['committer_email']) ? $settings['committer_email'] : ('noreply@' . $site_host);
+            $cfg1 = $this->run_cmd(array('git', '-C', $repo_dir, 'config', 'user.name', $author_name));
+            $cfg2 = $this->run_cmd(array('git', '-C', $repo_dir, 'config', 'user.email', $author_email));
+            $log[] = $cfg1['out'];
+            $log[] = $cfg2['out'];
+
+            // Decide which files to include: only crawled files by default (from manifest)
+            // Optionally include metadata if toggle is set in settings (hidden setting)
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            $runner = new Wgetta_Job_Runner();
+            $runner->set_job($job_id);
+            $manifest_files = $runner->generate_manifest();
+            // Exclude known archives
+            $manifest_files = array_values(array_filter($manifest_files, function($rel){
+                return $rel !== 'archive.zip' && $rel !== 'plan.csv';
+            }));
+
+            $include_meta = !empty($settings['include_meta']);
+            $meta_files = array();
+            if ($include_meta) {
+                foreach (array('manifest.txt', 'status.json', 'urls.json', 'command.txt', 'plan.csv') as $m) {
+                    if (file_exists($job_dir . '/' . $m)) { $meta_files[] = $m; }
+                }
+            }
+            $files_to_copy = array_merge($manifest_files, $meta_files);
+            foreach ($files_to_copy as $rel) {
+                $src = $job_dir . '/' . ltrim($rel, '/');
+                $dst = $repo_dir . '/' . ltrim($rel, '/');
+                $dstDir = dirname($dst);
+                if (!is_dir($dstDir)) { wp_mkdir_p($dstDir); }
+                if (is_file($src)) { copy($src, $dst); }
+            }
+
+            // git add/commit
+            $res2 = $this->run_cmd(array('git', '-C', $repo_dir, 'add', '-A'));
+            $log[] = $res2['out'];
+            // Commit; if nothing to commit, this exits non-zero; detect message
+            // Determine branch name from plan_name if present
+            $status = $runner->get_status();
+            $plan_name = is_array($status) && !empty($status['plan_name']) ? $status['plan_name'] : '';
+            $branch_slug = $plan_name ? sanitize_title($plan_name) : $job_id;
+            $message = 'Wgetta deploy ' . ($plan_name ?: $job_id) . ' on ' . date('c');
+            $res3 = $this->run_cmd(array('git', '-C', $repo_dir, 'commit', '-m', $message, '--author=Wp Wgetta <noreply@example.com>'));
+            $log[] = $res3['out'];
+            $nothingToCommit = (strpos($res3['out'], 'nothing to commit') !== false);
+
+            // Create/force branch using template from settings
+            $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
+            $date_str = date('Ymd-His');
+            $replacements = array(
+                '{plan_name}' => ($plan_name ?: $job_id),
+                '{job_id}' => $job_id,
+                '{date}' => $date_str
+            );
+            $branch_name = strtr($template, $replacements);
+            // sanitize to a safe git ref (basic)
+            $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
+            $branch_name = trim($branch_name, '-/');
+            if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
+            $branch = $branch_name;
+            $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
+            $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', 'origin', $branch));
+            $log[] = $res4['out'];
+            if ($res4['code'] !== 0) { throw new RuntimeException('git push failed'); }
+
+            // Clean up
+            $this->rrmdir($repo_dir);
+
+            $full = implode("\n", $log);
+            if ($mask) { $full = str_replace($mask, '***', $full); }
+            $resp['success'] = true;
+            $resp['output'] = $full . ($nothingToCommit ? "\n(nothing to commit)" : '');
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    private function run_cmd($argv) {
+        $descriptors = array(
+            0 => array('pipe', 'r'),
+            1 => array('pipe', 'w'),
+            2 => array('pipe', 'w')
+        );
+        $env = array(
+            'LC_ALL' => 'C',
+            'PATH' => '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+        );
+        $proc = proc_open($argv, $descriptors, $pipes, null, $env);
+        if (!is_resource($proc)) { return array('code' => 1, 'out' => 'Failed to start process'); }
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]); fclose($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]); fclose($pipes[2]);
+        $code = proc_close($proc);
+        return array('code' => $code, 'out' => trim($stdout . (strlen($stderr) ? "\n" . $stderr : '')));
+    }
+
+    private function rrcopy($src, $dst) {
+        $src = rtrim($src, DIRECTORY_SEPARATOR);
+        $dst = rtrim($dst, DIRECTORY_SEPARATOR);
+        if (!is_dir($src)) { return; }
+        $items = scandir($src);
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') { continue; }
+            $from = $src . DIRECTORY_SEPARATOR . $item;
+            $to = $dst . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($from)) {
+                if (!is_dir($to)) { wp_mkdir_p($to); }
+                $this->rrcopy($from, $to);
+            } else {
+                copy($from, $to);
+            }
+        }
+    }
+
+    /** Test GitLab connection */
+    public function ajax_git_test() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $url = isset($_POST['url']) ? esc_url_raw($_POST['url']) : '';
+            $project = isset($_POST['project_id']) ? sanitize_text_field($_POST['project_id']) : '';
+            $token = isset($_POST['token']) ? sanitize_text_field($_POST['token']) : '';
+            if (!$url || !$project || !$token) { throw new RuntimeException('Missing settings'); }
+            $api = rtrim($url, '/') . '/api/v4/projects/' . rawurlencode($project);
+            $res = wp_remote_get($api, array('headers' => array('PRIVATE-TOKEN' => $token), 'timeout' => 10));
+            if (is_wp_error($res)) { throw new RuntimeException($res->get_error_message()); }
+            $code = wp_remote_retrieve_response_code($res);
+            if ($code >= 200 && $code < 300) {
+                $body = json_decode(wp_remote_retrieve_body($res), true);
+                $resp['success'] = true;
+                $resp['project'] = array(
+                    'name' => $body['name'] ?? '',
+                    'path_with_namespace' => $body['path_with_namespace'] ?? '',
+                    'default_branch' => $body['default_branch'] ?? ''
+                );
+            } else {
+                throw new RuntimeException('HTTP ' . $code . ' from GitLab');
+            }
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Set job metadata (e.g., plan_name) */
+    public function ajax_set_job_meta() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            $meta = isset($_POST['meta']) ? (array) $_POST['meta'] : array();
+            if (!$job_id) { throw new RuntimeException('Missing job'); }
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            $runner = new Wgetta_Job_Runner();
+            $runner->set_job($job_id);
+            $runner->set_metadata($meta);
+            $resp['success'] = true;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Remove a job directory (admin only) */
+    public function ajax_job_remove() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $resp = array('success' => false);
+        try {
+            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
+            if ($job_id === '' || strpos($job_id, 'job_') !== 0) { throw new RuntimeException('Invalid job'); }
+            $upload_dir = wp_upload_dir();
+            $jobs_root = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs';
+            $job_dir = realpath($jobs_root . '/' . $job_id);
+            $root_real = realpath($jobs_root);
+            if ($job_dir === false || $root_real === false || strpos($job_dir, $root_real) !== 0) { throw new RuntimeException('Job not found'); }
+            // Recursively delete directory
+            $this->rrmdir($job_dir);
+            $resp['success'] = true;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    private function rrmdir($dir) {
+        if (!is_dir($dir)) { return; }
+        $items = scandir($dir);
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') { continue; }
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($path)) {
+                $this->rrmdir($path);
+            } else {
+                @unlink($path);
+            }
+        }
+        @rmdir($dir);
     }
     
     /**
@@ -611,7 +932,10 @@ class Wgetta_Admin {
                         'status' => $sstatus ? ($sstatus['status'] ?? null) : null,
                         'files' => $count,
                         'path' => $dir,
-                        'modified' => filemtime($dir)
+                        'modified' => filemtime($dir),
+                        'plan_name' => $sstatus ? ($sstatus['plan_name'] ?? null) : null,
+                        'urls_included' => $sstatus ? ($sstatus['urls_included'] ?? null) : null,
+                        'urls_total' => $sstatus ? ($sstatus['urls_total'] ?? null) : null
                     );
                 }
             }

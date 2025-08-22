@@ -286,3 +286,28 @@
 .wgetta-status.error {
     color: #dc3232;
 }
+
+/* Details/summary headings - better chevron/title alignment */
+.wgetta-card details > summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    cursor: pointer;
+    padding: 0;
+    margin: 0 0 10px 0;
+}
+
+.wgetta-card details > summary::-webkit-details-marker {
+    margin-right: 8px;
+}
+
+.wgetta-card details > summary::marker {
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+.wgetta-card details > summary h2 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}

@@ -365,7 +365,7 @@
 
             // Populate history table
             if (Array.isArray(history)) {
-                var html = '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Job</th><th>Status</th><th>Files</th><th>Path</th><th>Archive</th></tr></thead><tbody>';
+                var html = '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Job</th><th>Status</th><th>Files</th><th>Path</th><th>Archive</th><th>Actions</th></tr></thead><tbody>';
                 for (var i = 0; i < history.length; i++) {
                     var h = history[i];
                     html += '<tr>' +
@@ -374,6 +374,7 @@
                         '<td>' + (h.files || 0) + '</td>' +
                         '<td><code>' + escapeHtml(h.path || '') + '</code></td>' +
                         '<td>' + (h.zip_url ? ('<a href="' + h.zip_url + '" target="_blank">Download</a>') : '') + '</td>' +
+                        '<td><button class="button link-delete" data-job="' + (h.id || '') + '">Remove</button></td>' +
                         '</tr>';
                 }
                 html += '</tbody></table>';
@@ -388,7 +389,7 @@
             };
             $.post(wgetta_ajax.ajax_url, data, function(response) {
                 if (response && response.success && Array.isArray(response.history)) {
-                    var html = '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Job</th><th>Status</th><th>Files</th><th>Path</th><th>Archive</th></tr></thead><tbody>';
+                    var html = '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Job</th><th>Status</th><th>Files</th><th>Path</th><th>Archive</th><th>Actions</th></tr></thead><tbody>';
                     for (var i = 0; i < response.history.length; i++) {
                         var h = response.history[i];
                         html += '<tr>' +
@@ -397,6 +398,7 @@
                             '<td>' + (h.files || 0) + '</td>' +
                             '<td><code>' + escapeHtml(h.path || '') + '</code></td>' +
                             '<td>' + (h.zip_url ? ('<a href="' + h.zip_url + '" target="_blank">Download</a>') : '') + '</td>' +
+                            '<td><button class="button link-delete" data-job="' + (h.id || '') + '">Remove</button></td>' +
                             '</tr>';
                     }
                     html += '</tbody></table>';
@@ -404,6 +406,21 @@
                 }
             });
         }
+
+        // Delegate remove clicks
+        $(document).on('click', '.link-delete', function(e){
+            e.preventDefault();
+            if (!confirm('Remove this job and all downloaded files?')) { return; }
+            var $btn = $(this);
+            var job = $btn.data('job');
+            $.post(wgetta_ajax.ajax_url, { action: 'wgetta_job_remove', nonce: $('#wgetta_nonce').val(), job_id: job }, function(resp){
+                if (resp && resp.success) {
+                    $btn.closest('tr').fadeOut(200, function(){ $(this).remove(); });
+                } else {
+                    alert((resp && resp.message) ? resp.message : 'Failed to remove job');
+                }
+            });
+        });
     }
     
     /**
@@ -587,6 +604,7 @@
                         if (resp && resp.success) {
                             currentPlan = resp.urls || [];
                             buildTreeAndList(currentPlan);
+                            try { document.getElementById('step-review').open = true; } catch(e){}
                         }
                     });
                 } else {
@@ -600,27 +618,38 @@
             var $status = $('#plan-exec-status');
             // Auto-save current selections to plan.csv before executing
             var urls = collectPlan();
+            var planName = $('#plan-name').val().trim();
+            var includedCount = 0; for (var i = 0; i < urls.length; i++) { if (!/\s+#SKIP$/.test(urls[i])) includedCount++; }
             $.post(wgetta_ajax.ajax_url, {
                 action: 'wgetta_plan_save',
                 nonce: $('#wgetta_nonce').val(),
                 job_id: currentJobId,
                 urls: urls
             }, function(saveResp) {
-                // Regardless of saveResp.success, attempt to execute and show any errors
+                // Set job metadata before execution
                 $.post(wgetta_ajax.ajax_url, {
-                    action: 'wgetta_plan_execute',
+                    action: 'wgetta_set_job_meta',
                     nonce: $('#wgetta_nonce').val(),
-                    job_id: currentJobId
-                }, function(resp) {
-                    if (resp && resp.success) {
-                        $status.text('Plan execution queued (Job ' + resp.job_id + ').');
-                        $('#plan-execution-progress').show();
-                        $('#plan-progress-status').text('Queued');
-                        $('#plan-output-console').text('');
-                        startPlanLogPolling(resp.job_id, $('#plan-name').val().trim());
-                    } else {
-                        $status.text((resp && resp.message) ? resp.message : 'Failed to execute plan');
-                    }
+                    job_id: currentJobId,
+                    meta: { plan_name: planName || '(unsaved)', urls_included: includedCount, urls_total: urls.length }
+                }, function(){
+                    // Regardless of metadata save, attempt to execute and show any errors
+                    $.post(wgetta_ajax.ajax_url, {
+                        action: 'wgetta_plan_execute',
+                        nonce: $('#wgetta_nonce').val(),
+                        job_id: currentJobId
+                    }, function(resp) {
+                        if (resp && resp.success) {
+                            $status.text('Plan execution queued (Job ' + resp.job_id + ').');
+                            $('#plan-execution-progress').show();
+                            $('#plan-progress-status').text('Queued');
+                            $('#plan-output-console').text('');
+                            startPlanLogPolling(resp.job_id, planName);
+                            try { document.getElementById('step-execute').open = true; } catch(e){}
+                        } else {
+                            $status.text((resp && resp.message) ? resp.message : 'Failed to execute plan');
+                        }
+                    });
                 });
             });
         });
@@ -672,6 +701,7 @@
                                     }
                                     html += '</tbody></table>';
                                     $('#plan-execution-history').html(html);
+                                    try { document.getElementById('step-history').open = true; } catch(e){}
                                 }
                             }
                         }
@@ -801,6 +831,8 @@
                     $('#run-plan-progress').show();
                     $('#run-plan-progress-status').text('Queued');
                     $('#run-plan-console').text('');
+                    // Attach metadata (plan name)
+                    $.post(wgetta_ajax.ajax_url, { action: 'wgetta_set_job_meta', nonce: $('#wgetta_nonce').val(), job_id: jobId, meta: { plan_name: name } });
                     // Queue execution
                     $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_execute', nonce: $('#wgetta_nonce').val(), job_id: jobId }, function(execResp){
                         if (execResp && execResp.success) {

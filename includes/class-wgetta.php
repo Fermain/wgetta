@@ -41,6 +41,12 @@ class Wgetta {
         add_action('wp_ajax_wgetta_plan_load', array($this->admin, 'ajax_plan_load'));
         add_action('wp_ajax_wgetta_plan_save_named', array($this->admin, 'ajax_plan_save_named'));
         add_action('wp_ajax_wgetta_plan_create', array($this->admin, 'ajax_plan_create'));
+        add_action('wp_ajax_wgetta_git_save', array($this->admin, 'ajax_git_save'));
+        add_action('wp_ajax_wgetta_git_deploy_dry', array($this->admin, 'ajax_git_deploy_dry'));
+        add_action('wp_ajax_wgetta_git_deploy_push', array($this->admin, 'ajax_git_deploy_push'));
+        add_action('wp_ajax_wgetta_git_test', array($this->admin, 'ajax_git_test'));
+        add_action('wp_ajax_wgetta_set_job_meta', array($this->admin, 'ajax_set_job_meta'));
+        add_action('wp_ajax_wgetta_job_remove', array($this->admin, 'ajax_job_remove'));
         
         // WP-CLI commands
         if (defined('WP_CLI') && WP_CLI) {
@@ -210,6 +216,10 @@ class Wgetta {
             $runner->generate_manifest();
             // Create downloadable archive
             $runner->create_archive_zip('archive.zip');
+            // Persist plan name if provided (for later display/deploy)
+            if (!empty($argv) && is_array($argv)) {
+                // no-op here; UI can call set_metadata via a dedicated endpoint if needed
+            }
             
         } catch (Exception $e) {
             // Job will be marked as failed by the runner
@@ -289,6 +299,7 @@ class Wgetta {
             $runner->generate_manifest();
             // Create downloadable archive
             $runner->create_archive_zip('archive.zip');
+            // Store plan name if provided
         } catch (Exception $e) {
             error_log('Wgetta plan job failed: ' . $e->getMessage());
         }

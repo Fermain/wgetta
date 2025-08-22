@@ -49,11 +49,12 @@ if (is_dir($jobs_root)) {
                     <th>Path</th>
                     <th>Archive</th>
                     <th>Modified</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($rows)) : ?>
-                    <tr><td colspan="6">No previous executions found.</td></tr>
+                    <tr><td colspan="7">No previous executions found.</td></tr>
                 <?php else: foreach ($rows as $r): ?>
                     <tr>
                         <td><code><?php echo esc_html($r['id']); ?></code></td>
@@ -62,10 +63,30 @@ if (is_dir($jobs_root)) {
                         <td><code><?php echo esc_html($r['path']); ?></code></td>
                         <td><?php if ($r['zip_url']) : ?><a href="<?php echo esc_url($r['zip_url']); ?>" target="_blank">Download</a><?php endif; ?></td>
                         <td><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $r['time'])); ?></td>
+                        <td><button class="button link-delete" data-job="<?php echo esc_attr($r['id']); ?>">Remove</button></td>
                     </tr>
                 <?php endforeach; endif; ?>
             </tbody>
         </table>
     </div>
+    <?php wp_nonce_field('wgetta_ajax_nonce', 'wgetta_nonce'); ?>
 </div>
+
+<script type="text/javascript">
+(function($){
+    $(document).on('click', '.link-delete', function(e){
+        e.preventDefault();
+        if (!confirm('Remove this job and all downloaded files?')) { return; }
+        var $btn = $(this);
+        var job = $btn.data('job');
+        $.post(ajaxurl, { action: 'wgetta_job_remove', nonce: $('#wgetta_nonce').val(), job_id: job }, function(resp){
+            if (resp && resp.success) {
+                $btn.closest('tr').fadeOut(200, function(){ $(this).remove(); });
+            } else {
+                alert((resp && resp.message) ? resp.message : 'Failed to remove job');
+            }
+        });
+    });
+})(jQuery);
+</script>
 

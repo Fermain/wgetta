@@ -363,6 +363,17 @@ class Wgetta_Job_Runner {
             json_encode($status, JSON_PRETTY_PRINT)
         );
     }
+
+    /**
+     * Public: merge arbitrary metadata into status.json
+     */
+    public function set_metadata($meta) {
+        $status = $this->get_status();
+        if (!is_array($status)) { $status = array(); }
+        if (!is_array($meta)) { $meta = array(); }
+        $status = array_merge($status, $meta);
+        $this->update_status($status);
+    }
     
     /**
      * Get job status
