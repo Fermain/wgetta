@@ -20,46 +20,37 @@ class Wgetta_Admin {
             'Wgetta',
             'Wgetta',
             'manage_options',
-            'wgetta',
-            array($this, 'display_settings_page'),
+            'wgetta-plan-copy',
+            array($this, 'display_plan_copy_page'),
             'dashicons-download',
             30
         );
         
         add_submenu_page(
-            'wgetta',
-            'Commands',
-            'Commands',
-            'manage_options',
-            'wgetta',
-            array($this, 'display_settings_page')
-        );
-        
-        add_submenu_page(
-            'wgetta',
+            'wgetta-plan-copy',
             'Plan',
             'Plan',
-            'manage_options',
-            'wgetta-plan',
-            array($this, 'display_plan_page')
-        );
-        
-        add_submenu_page(
-            'wgetta',
-            'Copy',
-            'Copy',
-            'manage_options',
-            'wgetta-copy',
-            array($this, 'display_copy_page')
-        );
-
-        add_submenu_page(
-            'wgetta',
-            'Plan Copy',
-            'Plan Copy',
             'manage_options',
             'wgetta-plan-copy',
             array($this, 'display_plan_copy_page')
+        );
+
+        add_submenu_page(
+            'wgetta-plan-copy',
+            'Run Plan',
+            'Run Plan',
+            'manage_options',
+            'wgetta-plan-run',
+            array($this, 'display_plan_run_page')
+        );
+
+        add_submenu_page(
+            'wgetta-plan-copy',
+            'History',
+            'History',
+            'manage_options',
+            'wgetta-history',
+            array($this, 'display_history_page')
         );
     }
     
@@ -71,11 +62,13 @@ class Wgetta_Admin {
             return;
         }
         
+        $css_ver = @filemtime(WGETTA_PLUGIN_DIR . 'admin/css/wgetta-admin.css');
+        if (!$css_ver) { $css_ver = $this->version; }
         wp_enqueue_style(
             $this->plugin_name,
             WGETTA_PLUGIN_URL . 'admin/css/wgetta-admin.css',
             array(),
-            $this->version,
+            $css_ver,
             'all'
         );
     }
@@ -88,11 +81,13 @@ class Wgetta_Admin {
             return;
         }
         
+        $js_ver = @filemtime(WGETTA_PLUGIN_DIR . 'admin/js/wgetta-admin.js');
+        if (!$js_ver) { $js_ver = $this->version; }
         wp_enqueue_script(
             $this->plugin_name,
             WGETTA_PLUGIN_URL . 'admin/js/wgetta-admin.js',
             array('jquery'),
-            $this->version,
+            $js_ver,
             false
         );
         
@@ -131,22 +126,18 @@ class Wgetta_Admin {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-settings.php';
     }
     
-    /**
-     * Display plan page
-     */
-    public function display_plan_page() {
-        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-plan.php';
-    }
-    
-    /**
-     * Display copy page
-     */
-    public function display_copy_page() {
-        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-copy.php';
-    }
+    // Legacy plan page removed
     
     public function display_plan_copy_page() {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-plan-copy.php';
+    }
+    
+    public function display_plan_run_page() {
+        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-run.php';
+    }
+
+    public function display_history_page() {
+        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-history.php';
     }
     
     /**
@@ -227,133 +218,6 @@ class Wgetta_Admin {
         wp_send_json($response);
     }
     
-    /**
-     * AJAX handler for regex testing with POSIX ERE
-     */
-    public function ajax_test_regex() {
-        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-        
-        $response = array('success' => false, 'included' => array(), 'excluded' => array());
-        
-        try {
-            $job_id = isset($_POST['job_id']) ? sanitize_text_field($_POST['job_id']) : '';
-            $patterns = isset($_POST['patterns']) ? wp_unslash($_POST['patterns']) : array();
-            if (is_array($patterns)) {
-                $patterns = array_map('trim', $patterns);
-            }
-            
-            if (empty($job_id)) {
-                throw new RuntimeException('No job ID provided');
-            }
-            
-            // Load URLs from job
-            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            $runner = new Wgetta_Job_Runner();
-            $runner->set_job($job_id);
-            
-            $upload_dir = wp_upload_dir();
-            $urls_file = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id . '/urls.json';
-            
-            if (!file_exists($urls_file)) {
-                throw new RuntimeException('URLs not found for job');
-            }
-            
-            $urls = json_decode(file_get_contents($urls_file), true);
-            
-            // Validate patterns first
-            foreach ($patterns as $p) {
-                if ($p === '') { continue; }
-                $v = Wgetta_Job_Runner::wgetta_validate_pattern($p);
-                if (!$v['ok']) {
-                    throw new RuntimeException('Invalid pattern "' . $p . '": ' . $v['error']);
-                }
-            }
-
-            // Test each URL against patterns (OR semantics)
-            $included = array();
-            $excluded = array();
-            
-            foreach ($urls as $url) {
-                $matched = false;
-                foreach ($patterns as $pattern) {
-                    if ($pattern !== '' && Wgetta_Job_Runner::wgetta_posix_match($pattern, $url)) {
-                        $matched = true;
-                        break;
-                    }
-                }
-                
-                if ($matched) {
-                    $excluded[] = $url;
-                } else {
-                    $included[] = $url;
-                }
-            }
-            
-            // Save patterns exactly as entered
-            update_option('wgetta_regex_patterns', $patterns);
-            
-            $response['success'] = true;
-            $response['included'] = $included;
-            $response['excluded'] = $excluded;
-            
-        } catch (Exception $e) {
-            $response['message'] = 'Regex test failed: ' . $e->getMessage();
-        }
-        
-        wp_send_json($response);
-    }
-    
-    /**
-     * AJAX handler for saving regex patterns
-     */
-    public function ajax_save_regex() {
-        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-        
-        $response = array('success' => false, 'message' => '');
-        
-        try {
-            $patterns = isset($_POST['patterns']) ? wp_unslash($_POST['patterns']) : array();
-            if (is_array($patterns)) {
-                $patterns = array_map('trim', $patterns);
-            }
-            // Validate before saving
-            foreach ($patterns as $p) {
-                if ($p === '') { continue; }
-                $v = Wgetta_Job_Runner::wgetta_validate_pattern($p);
-                if (!$v['ok']) {
-                    throw new RuntimeException('Invalid pattern "' . $p . '": ' . $v['error']);
-                }
-            }
-            
-            // Clean and validate patterns
-            $clean_patterns = array();
-            foreach ($patterns as $pattern) {
-                $pattern = trim($pattern);
-                if (!empty($pattern)) {
-                    $clean_patterns[] = $pattern;
-                }
-            }
-            
-            // Save patterns as provided
-            update_option('wgetta_regex_patterns', $clean_patterns);
-            
-            $response['success'] = true;
-            $response['message'] = 'Regex patterns saved successfully';
-            
-        } catch (Exception $e) {
-            $response['message'] = 'Failed to save patterns: ' . $e->getMessage();
-        }
-        
-        wp_send_json($response);
-    }
     
     /**
      * AJAX handler for enqueueing execution
@@ -543,10 +407,14 @@ class Wgetta_Admin {
         $plan_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/plans';
         if (is_dir($plan_dir)) {
             foreach (glob($plan_dir . '/*.csv') as $file) {
+                $lines = array_filter(array_map('trim', explode("\n", file_get_contents($file))));
+                $included = 0; $total = 0;
+                foreach ($lines as $ln) { $total++; if (strpos($ln, ' #SKIP') === false) { $included++; } }
                 $resp['plans'][] = array(
                     'name' => basename($file, '.csv'),
                     'modified' => filemtime($file),
-                    'count' => count(array_filter(array_map('trim', explode("\n", file_get_contents($file)))))
+                    'included' => $included,
+                    'total' => $total
                 );
             }
         }
@@ -650,11 +518,16 @@ class Wgetta_Admin {
                     $elapsed = max(0, intval($status['completed']) - intval($status['started']));
                 }
 
+                $zip_url = null;
+                if (!empty($upload_dir['baseurl'])) {
+                    $zip_url = trailingslashit($upload_dir['baseurl']) . 'wgetta/jobs/' . $job_id . '/archive.zip';
+                }
                 $response['summary'] = array(
                     'files' => $files_downloaded,
                     'bytes' => $total_bytes,
                     'elapsed_seconds' => $elapsed,
-                    'path' => $job_dir
+                    'path' => $job_dir,
+                    'zip_url' => (file_exists($job_dir . '/archive.zip') ? $zip_url : null)
                 );
 
                 // Populate recent executions history (last 5 jobs by mtime)
@@ -676,11 +549,16 @@ class Wgetta_Admin {
                         if (file_exists($manifest)) {
                             $count = count(array_filter(array_map('trim', explode("\n", file_get_contents($manifest)))));
                         }
+                        $zip_url = null;
+                        if (file_exists($dir . '/archive.zip') && !empty($upload_dir['baseurl'])) {
+                            $zip_url = trailingslashit($upload_dir['baseurl']) . 'wgetta/jobs/' . $sid . '/archive.zip';
+                        }
                         $history[] = array(
                             'id' => $sid,
                             'status' => $sstatus ? ($sstatus['status'] ?? null) : null,
                             'files' => $count,
                             'path' => $dir,
+                            'zip_url' => $zip_url,
                             'modified' => filemtime($dir)
                         );
                     }

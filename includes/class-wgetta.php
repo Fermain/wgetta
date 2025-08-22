@@ -31,8 +31,6 @@ class Wgetta {
         // AJAX handlers
         add_action('wp_ajax_wgetta_save_settings', array($this->admin, 'ajax_save_settings'));
         add_action('wp_ajax_wgetta_dry_run', array($this->admin, 'ajax_dry_run'));
-        add_action('wp_ajax_wgetta_test_regex', array($this->admin, 'ajax_test_regex'));
-        add_action('wp_ajax_wgetta_save_regex', array($this->admin, 'ajax_save_regex'));
         add_action('wp_ajax_wgetta_execute', array($this->admin, 'ajax_execute'));
         add_action('wp_ajax_wgetta_log_tail', array($this->admin, 'ajax_log_tail'));
         add_action('wp_ajax_wgetta_history', array($this->admin, 'ajax_history'));
@@ -210,6 +208,8 @@ class Wgetta {
             
             // Generate manifest for successful execution
             $runner->generate_manifest();
+            // Create downloadable archive
+            $runner->create_archive_zip('archive.zip');
             
         } catch (Exception $e) {
             // Job will be marked as failed by the runner
@@ -287,6 +287,8 @@ class Wgetta {
 
             // Manifest
             $runner->generate_manifest();
+            // Create downloadable archive
+            $runner->create_archive_zip('archive.zip');
         } catch (Exception $e) {
             error_log('Wgetta plan job failed: ' . $e->getMessage());
         }

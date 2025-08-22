@@ -518,4 +518,51 @@ class Wgetta_Job_Runner {
         
         return $files;
     }
+
+    /**
+     * Create a ZIP archive of the job directory contents (excluding internal files)
+     */
+    public function create_archive_zip($archive_name = 'archive.zip') {
+        $zip_path = $this->job_dir . '/' . $archive_name;
+
+        // Build file list similar to manifest filtering
+        $files = $this->generate_manifest();
+
+        if (class_exists('ZipArchive')) {
+            $zip = new ZipArchive();
+            if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                return false;
+            }
+            foreach ($files as $rel) {
+                $abs = $this->job_dir . '/' . ltrim($rel, '/');
+                if (is_file($abs)) {
+                    $zip->addFile($abs, $rel);
+                }
+            }
+            // Optionally include manifest
+            if (file_exists($this->job_dir . '/manifest.txt')) {
+                $zip->addFile($this->job_dir . '/manifest.txt', 'manifest.txt');
+            }
+            $zip->close();
+            return file_exists($zip_path) ? $zip_path : false;
+        }
+
+        // Fallback to system zip
+        $descriptors = array(
+            0 => array('pipe', 'r'),
+            1 => array('pipe', 'w'),
+            2 => array('pipe', 'w')
+        );
+        $cmd = array('zip', '-rq', $zip_path);
+        $process = proc_open($cmd, $descriptors, $pipes, $this->job_dir, array(
+            'LC_ALL' => 'C',
+            'PATH' => '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+        ));
+        if (!is_resource($process)) { return false; }
+        fclose($pipes[0]);
+        stream_get_contents($pipes[1]); fclose($pipes[1]);
+        stream_get_contents($pipes[2]); fclose($pipes[2]);
+        proc_close($process);
+        return file_exists($zip_path) ? $zip_path : false;
+    }
 }

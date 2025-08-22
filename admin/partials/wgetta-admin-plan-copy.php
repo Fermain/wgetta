@@ -10,19 +10,16 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
 
     <div class="wgetta-copy-container">
         <div class="wgetta-card">
-            <h2>1) Generate Plan from Dry Run</h2>
-            <?php if (empty($wgetta_cmd)): ?>
-                <div class="notice notice-warning"><p>No wget command configured. Please configure it first.</p></div>
-            <?php else: ?>
-                <p>The plan is created from your current command with <code>--spider</code> plus your saved exclusions.</p>
-                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                    <button type="button" id="generate-plan" class="button button-primary">Generate Plan</button>
-                    <select id="load-plan-select" class="regular-text" style="min-width:240px;"></select>
-                    <button type="button" id="load-plan" class="button">Load Named Plan</button>
-                    <span class="spinner"></span>
-                </div>
-                <div id="plan-status" class="wgetta-status"></div>
-            <?php endif; ?>
+            <h2>1) Command & Generate</h2>
+            <p>Enter your base <code>wget</code> command. Discovery will run with <code>--spider</code>.</p>
+            <textarea id="wget-command" name="wgetta_cmd" rows="4" class="large-text code" placeholder="wget -nv --recursive http://example.com/"><?php echo esc_textarea($wgetta_cmd); ?></textarea>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+                <button type="button" id="generate-plan" class="button button-primary">Generate New Plan</button>
+                <select id="load-plan-select" class="regular-text" style="min-width:240px;"></select>
+                <button type="button" id="load-plan" class="button">Load Existing Plan</button>
+                <span class="spinner"></span>
+            </div>
+            <div id="plan-status" class="wgetta-status"></div>
         </div>
 
         <div class="wgetta-card">
