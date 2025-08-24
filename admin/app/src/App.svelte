@@ -2,6 +2,7 @@
   import { Accordion } from 'bits-ui'
   import type { Plan, CommandOption, PlanRule } from './lib/api/mock'
   import { MockApi } from './lib/api/mock'
+  import { assembleEffective } from './lib/cmd'
 
   let step: 'discover' | 'rules' | 'manual' | 'run' | 'deploy' = 'discover'
 
@@ -17,6 +18,7 @@
   let rules: PlanRule[] = []
   let testing = false
   let testSummary: { includedCount: number; excludedCount: number } | null = null
+  $: eff = assembleEffective({ baseUrls, options })
 
   async function doDiscover() {
     const res = await MockApi.discover({ baseUrls, options })
@@ -64,14 +66,21 @@
         <Accordion.Trigger>1) Discover</Accordion.Trigger>
       </Accordion.Header>
       <Accordion.Content>
-        <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
           <div>
-            <label>Base URL</label>
-            <input type="text" value={baseUrls[0]} on:input={(e:any)=> baseUrls=[e.currentTarget.value]} style="min-width:360px;" />
+            <label for="baseurl">Base URL</label>
+            <input id="baseurl" type="text" value={baseUrls[0]} on:input={(e:any)=> baseUrls=[e.currentTarget.value]} style="min-width:360px;" />
+            <div style="margin-top:12px;">
+              <strong>Effective Commands (preview)</strong>
+              {#if baseUrls.length}
+                <pre style="white-space:pre-wrap; overflow:auto;">discover: {eff.discover.join(' ')}</pre>
+                <pre style="white-space:pre-wrap; overflow:auto;">run: {eff.run.join(' ')}</pre>
+              {/if}
+            </div>
           </div>
           <div>
-            <label>Options</label>
-            <div>
+            <label for="opts">Options</label>
+            <div id="opts">
               {#each options as opt, i}
                 <div style="margin-bottom:6px;">
                   <code>{opt.name}</code>
