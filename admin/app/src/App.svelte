@@ -24,13 +24,13 @@
 <main class="max-w-screen-lg mx-auto">
   <h1>Wgetta</h1>
 
-  <Tabs.Root value={step} on:change={(e:any)=> step = e.detail.value}>
+  <Tabs.Root bind:value={step}>
     <Tabs.List class="grid grid-cols-5 gap-2 my-2">
       {#each steps as s, i}
         <Tabs.Trigger
           value={s}
           disabled={i > stepIndex()+1}
-          class="px-3 py-2 rounded border border-neutral-700 text-sm text-neutral-300 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-600 disabled:opacity-40 data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500 data-[state=active]:text-white"
+          class="px-3 py-2 rounded border border-neutral-800 text-sm text-neutral-400 bg-neutral-950 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-600 disabled:opacity-40 data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500 data-[state=active]:text-white"
         >{labels[s]}</Tabs.Trigger>
       {/each}
     </Tabs.List>
