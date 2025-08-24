@@ -14,7 +14,7 @@
 
   const labels: Record<(typeof steps)[number], string> = {
     discover: 'Discover',
-    rules: 'Rules',
+    rules: 'Refine',
     manual: 'Manual',
     run: 'Run',
     deploy: 'Deploy'
@@ -25,17 +25,16 @@
   <h1>Wgetta</h1>
 
   <Tabs bind:value={step}>
-    <TabsList class="grid grid-cols-5 gap-2 my-2">
+    <TabsList>
       {#each steps as s, i}
         <TabsTrigger
           value={s}
           disabled={i > stepIndex()+1}
-          class="px-3 py-2 rounded border border-neutral-800 text-sm text-neutral-400 bg-neutral-950 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-600 disabled:opacity-40 data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500 data-[state=active]:text-white"
         >{labels[s]}</TabsTrigger>
       {/each}
     </TabsList>
     <div class="h-1.5 bg-neutral-800 rounded-md my-2">
-      <div class="h-1.5 bg-neutral-500 rounded-md" style={`width:${((stepIndex()+1)/steps.length)*100}%`}></div>
+      <div class="h-1.5 bg-neutral-500 rounded-md"></div>
     </div>
 
     <TabsContent value="discover">
