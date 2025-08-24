@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { Accordion } from 'bits-ui'
+  import { Tabs } from 'bits-ui'
   import type { Plan, CommandOption, PlanRule } from './lib/api/mock'
   import { MockApi } from './lib/api/mock'
   import { assembleEffective } from './lib/cmd'
 
-  let step: 'discover' | 'rules' | 'manual' | 'run' | 'deploy' = 'discover'
+  const steps = ['discover','rules','manual','run','deploy'] as const
+  let step: (typeof steps)[number] = 'discover'
+  const stepIndex = () => steps.indexOf(step)
+  function next(){ if (stepIndex() < steps.length - 1) step = steps[stepIndex()+1] }
+  function prev(){ if (stepIndex() > 0) step = steps[stepIndex()-1] }
 
   let baseUrls: string[] = [window?.WGETTA?.siteUrl || 'https://example.com/']
   let options: CommandOption[] = [
@@ -60,12 +64,17 @@
   <h1>Wgetta</h1>
   <p>Discover → Rules → Manual → Run → Deploy</p>
 
-  <Accordion.Root type="single" collapsible value={step} on:change={(e:any)=> step = e.detail.value}>
-    <Accordion.Item value="discover">
-      <Accordion.Header>
-        <Accordion.Trigger>1) Discover</Accordion.Trigger>
-      </Accordion.Header>
-      <Accordion.Content>
+  <Tabs.Root value={step} on:change={(e:any)=> step = e.detail.value}>
+    <Tabs.List>
+      {#each steps as s, i}
+        <Tabs.Trigger value={s} disabled={i > stepIndex()+1}>{i+1}) {s}</Tabs.Trigger>
+      {/each}
+    </Tabs.List>
+    <div style="height:6px; background:#333; border-radius:4px; margin:8px 0;">
+      <div style={`height:6px; background:#888; border-radius:4px; width:${((stepIndex()+1)/steps.length)*100}%`}></div>
+    </div>
+
+    <Tabs.Content value="discover">
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
           <div>
             <label for="baseurl">Base URL</label>
@@ -95,17 +104,13 @@
             </div>
           </div>
         </div>
-        <div style="margin-top:10px;">
+        <div style="margin-top:10px; display:flex; gap:8px;">
           <button on:click={doDiscover}>Run Discover (mock)</button>
+          <button on:click={next}>Next</button>
         </div>
-      </Accordion.Content>
-    </Accordion.Item>
+    </Tabs.Content>
 
-    <Accordion.Item value="rules" disabled={!plan}>
-      <Accordion.Header>
-        <Accordion.Trigger>2) Rules</Accordion.Trigger>
-      </Accordion.Header>
-      <Accordion.Content>
+    <Tabs.Content value="rules">
         <div>
           <div style="margin-bottom:8px;">
             <button on:click={addRule}>Add Rule</button>
@@ -121,49 +126,39 @@
           {#if testSummary}
             <p>Included: {testSummary.includedCount} • Excluded: {testSummary.excludedCount}</p>
           {/if}
-          <div style="margin-top:8px;">
+          <div style="margin-top:8px; display:flex; gap:8px;">
+            <button on:click={prev}>Back</button>
             <button on:click={applyRulesAndContinue}>Continue to Manual</button>
           </div>
         </div>
-      </Accordion.Content>
-    </Accordion.Item>
+    </Tabs.Content>
 
-    <Accordion.Item value="manual" disabled={!plan}>
-      <Accordion.Header>
-        <Accordion.Trigger>3) Manual</Accordion.Trigger>
-      </Accordion.Header>
-      <Accordion.Content>
+    <Tabs.Content value="manual">
         <p>Manual selection UI placeholder (virtualized tree to come). Sample:</p>
         <ul>
           {#each sample.slice(0,10) as u}
             <li><code>{u}</code></li>
           {/each}
         </ul>
-        <div style="margin-top:8px;">
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button on:click={prev}>Back</button>
           <button on:click={gotoRun}>Continue to Run</button>
         </div>
-      </Accordion.Content>
-    </Accordion.Item>
+    </Tabs.Content>
 
-    <Accordion.Item value="run" disabled={!plan}>
-      <Accordion.Header>
-        <Accordion.Trigger>4) Run</Accordion.Trigger>
-      </Accordion.Header>
-      <Accordion.Content>
+    <Tabs.Content value="run">
         <p>Run/Log placeholder.</p>
-        <div style="margin-top:8px;">
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button on:click={prev}>Back</button>
           <button on:click={gotoDeploy}>Continue to Deploy</button>
         </div>
-      </Accordion.Content>
-    </Accordion.Item>
+    </Tabs.Content>
 
-    <Accordion.Item value="deploy" disabled={!plan}>
-      <Accordion.Header>
-        <Accordion.Trigger>5) Deploy</Accordion.Trigger>
-      </Accordion.Header>
-      <Accordion.Content>
+    <Tabs.Content value="deploy">
         <p>Deploy placeholder.</p>
-      </Accordion.Content>
-    </Accordion.Item>
-  </Accordion.Root>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button on:click={prev}>Back</button>
+        </div>
+    </Tabs.Content>
+  </Tabs.Root>
 </main>
