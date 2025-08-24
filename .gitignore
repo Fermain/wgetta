@@ -1,0 +1,22 @@
+# Build outputs
+/admin/dist/
+/admin/app/dist/
+
+# Node dependencies
+/admin/app/node_modules/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage / reports
+coverage/
+*.lcov
+
+
