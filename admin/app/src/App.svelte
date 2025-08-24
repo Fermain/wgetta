@@ -61,7 +61,7 @@
   }
 </script>
 
-<main>
+<main class="max-w-screen-lg mx-auto">
   <h1>Wgetta</h1>
   <p>Discover → Rules → Manual → Run → Deploy</p>
 
@@ -71,21 +71,21 @@
         <Tabs.Trigger value={s} disabled={i > stepIndex()+1}>{i+1}) {s}</Tabs.Trigger>
       {/each}
     </Tabs.List>
-    <div style="height:6px; background:#333; border-radius:4px; margin:8px 0;">
-      <div style={`height:6px; background:#888; border-radius:4px; width:${((stepIndex()+1)/steps.length)*100}%`}></div>
+    <div class="h-1.5 bg-neutral-800 rounded-md my-2">
+      <div class="h-1.5 bg-neutral-500 rounded-md" style={`width:${((stepIndex()+1)/steps.length)*100}%`}></div>
     </div>
 
     <Tabs.Content value="discover">
       <WgettaStep title="Discover">
-        <div class="w-full" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
+        <div class="w-full grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           <div>
             <label for="baseurl">Base URL</label>
             <input id="baseurl" type="text" value={baseUrls[0]} on:input={(e:any)=> baseUrls=[e.currentTarget.value]} style="min-width:360px;" />
-            <div style="margin-top:12px;">
-              <strong>Effective Commands (preview)</strong>
+            <div class="mt-3">
+              <strong class="font-semibold">Effective Commands (preview)</strong>
               {#if baseUrls.length}
-                <pre style="white-space:pre-wrap; overflow:auto;">discover: {eff.discover.join(' ')}</pre>
-                <pre style="white-space:pre-wrap; overflow:auto;">run: {eff.run.join(' ')}</pre>
+                <pre class="whitespace-pre-wrap overflow-auto">discover: {eff.discover.join(' ')}</pre>
+                <pre class="whitespace-pre-wrap overflow-auto">run: {eff.run.join(' ')}</pre>
               {/if}
             </div>
           </div>
@@ -93,7 +93,7 @@
             <label for="opts">Options</label>
             <div id="opts">
               {#each options as opt, i}
-                <div style="margin-bottom:6px;">
+                <div class="mb-1.5">
                   <code>{opt.name}</code>
                   {#if opt.value !== null}
                     = <input type="text" value={opt.value} on:input={(e:any)=> options[i] = { ...opt, value: e.currentTarget.value }} />
@@ -106,9 +106,9 @@
             </div>
           </div>
         </div>
-        <div style="margin-top:10px; display:flex; gap:8px;">
-          <button on:click={doDiscover}>Run Discover (mock)</button>
-          <button on:click={next}>Next</button>
+        <div class="mt-2 flex gap-2">
+          <button on:click={doDiscover} class="px-3 py-2 rounded border border-neutral-700">Run Discover (mock)</button>
+          <button on:click={next} class="px-3 py-2 rounded border border-neutral-700">Next</button>
         </div>
       </WgettaStep>
     </Tabs.Content>
@@ -116,23 +116,23 @@
     <Tabs.Content value="rules">
       <WgettaStep title="Rules">
         <div>
-          <div style="margin-bottom:8px;">
-            <button on:click={addRule}>Add Rule</button>
-            <button on:click={testRules} disabled={rules.length===0 || testing} style="margin-left:8px;">{testing ? 'Testing…' : 'Test Rules (mock)'}</button>
+          <div class="mb-2">
+            <button on:click={addRule} class="px-3 py-2 rounded border border-neutral-700">Add Rule</button>
+            <button on:click={testRules} disabled={rules.length===0 || testing} class="ml-2 px-3 py-2 rounded border border-neutral-700 opacity-100 disabled:opacity-50">{testing ? 'Testing…' : 'Test Rules (mock)'}</button>
           </div>
           {#each rules as r, i}
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+            <div class="flex gap-2 items-center mb-1.5">
               <input type="checkbox" checked={r.enabled} on:change={(e:any)=> rules[i] = { ...r, enabled: e.currentTarget.checked }} />
-              <input type="text" placeholder="POSIX regex" value={r.pattern} on:input={(e:any)=> rules[i] = { ...r, pattern: e.currentTarget.value }} style="min-width:360px;" />
+              <input type="text" placeholder="POSIX regex" value={r.pattern} on:input={(e:any)=> rules[i] = { ...r, pattern: e.currentTarget.value }} class="min-w-[360px]" />
               <input type="text" placeholder="note" value={r.note || ''} on:input={(e:any)=> rules[i] = { ...r, note: e.currentTarget.value }} />
             </div>
           {/each}
           {#if testSummary}
             <p>Included: {testSummary.includedCount} • Excluded: {testSummary.excludedCount}</p>
           {/if}
-          <div style="margin-top:8px; display:flex; gap:8px;">
-            <button on:click={prev}>Back</button>
-            <button on:click={applyRulesAndContinue}>Continue to Manual</button>
+          <div class="mt-2 flex gap-2">
+            <button on:click={prev} class="px-3 py-2 rounded border border-neutral-700">Back</button>
+            <button on:click={applyRulesAndContinue} class="px-3 py-2 rounded border border-neutral-700">Continue to Manual</button>
           </div>
         </div>
       </WgettaStep>
@@ -146,9 +146,9 @@
             <li><code>{u}</code></li>
           {/each}
         </ul>
-        <div style="margin-top:8px; display:flex; gap:8px;">
-          <button on:click={prev}>Back</button>
-          <button on:click={gotoRun}>Continue to Run</button>
+        <div class="mt-2 flex gap-2">
+          <button on:click={prev} class="px-3 py-2 rounded border border-neutral-700">Back</button>
+          <button on:click={gotoRun} class="px-3 py-2 rounded border border-neutral-700">Continue to Run</button>
         </div>
       </WgettaStep>
     </Tabs.Content>
@@ -156,9 +156,9 @@
     <Tabs.Content value="run">
       <WgettaStep title="Run">
         <p>Run/Log placeholder.</p>
-        <div style="margin-top:8px; display:flex; gap:8px;">
-          <button on:click={prev}>Back</button>
-          <button on:click={gotoDeploy}>Continue to Deploy</button>
+        <div class="mt-2 flex gap-2">
+          <button on:click={prev} class="px-3 py-2 rounded border border-neutral-700">Back</button>
+          <button on:click={gotoDeploy} class="px-3 py-2 rounded border border-neutral-700">Continue to Deploy</button>
         </div>
       </WgettaStep>
     </Tabs.Content>
@@ -166,8 +166,8 @@
     <Tabs.Content value="deploy">
       <WgettaStep title="Deploy">
         <p>Deploy placeholder.</p>
-        <div style="margin-top:8px; display:flex; gap:8px;">
-          <button on:click={prev}>Back</button>
+        <div class="mt-2 flex gap-2">
+          <button on:click={prev} class="px-3 py-2 rounded border border-neutral-700">Back</button>
         </div>
       </WgettaStep>
     </Tabs.Content>
