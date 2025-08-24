@@ -11,16 +11,27 @@
   const stepIndex = () => steps.indexOf(step)
   function next(){ if (stepIndex() < steps.length - 1) step = steps[stepIndex()+1] }
   function prev(){ if (stepIndex() > 0) step = steps[stepIndex()-1] }
+
+  const labels: Record<(typeof steps)[number], string> = {
+    discover: 'Discover',
+    rules: 'Rules',
+    manual: 'Manual',
+    run: 'Run',
+    deploy: 'Deploy'
+  }
 </script>
 
 <main class="max-w-screen-lg mx-auto">
   <h1>Wgetta</h1>
-  <p>Discover → Rules → Manual → Run → Deploy</p>
 
   <Tabs.Root value={step} on:change={(e:any)=> step = e.detail.value}>
-    <Tabs.List>
+    <Tabs.List class="grid grid-cols-5 gap-2 my-2">
       {#each steps as s, i}
-        <Tabs.Trigger value={s} disabled={i > stepIndex()+1}>{i+1}) {s}</Tabs.Trigger>
+        <Tabs.Trigger
+          value={s}
+          disabled={i > stepIndex()+1}
+          class="px-3 py-2 rounded border border-neutral-700 text-sm data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500"
+        >{labels[s]}</Tabs.Trigger>
       {/each}
     </Tabs.List>
     <div class="h-1.5 bg-neutral-800 rounded-md my-2">
