@@ -3,6 +3,7 @@
   import type { Plan, CommandOption, PlanRule } from './lib/api/mock'
   import { MockApi } from './lib/api/mock'
   import { assembleEffective } from './lib/cmd'
+  import WgettaStep from './lib/WgettaStep.svelte'
 
   const steps = ['discover','rules','manual','run','deploy'] as const
   let step: (typeof steps)[number] = 'discover'
@@ -75,7 +76,8 @@
     </div>
 
     <Tabs.Content value="discover">
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
+      <WgettaStep title="Discover">
+        <div class="w-full" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start;">
           <div>
             <label for="baseurl">Base URL</label>
             <input id="baseurl" type="text" value={baseUrls[0]} on:input={(e:any)=> baseUrls=[e.currentTarget.value]} style="min-width:360px;" />
@@ -108,9 +110,11 @@
           <button on:click={doDiscover}>Run Discover (mock)</button>
           <button on:click={next}>Next</button>
         </div>
+      </WgettaStep>
     </Tabs.Content>
 
     <Tabs.Content value="rules">
+      <WgettaStep title="Rules">
         <div>
           <div style="margin-bottom:8px;">
             <button on:click={addRule}>Add Rule</button>
@@ -131,9 +135,11 @@
             <button on:click={applyRulesAndContinue}>Continue to Manual</button>
           </div>
         </div>
+      </WgettaStep>
     </Tabs.Content>
 
     <Tabs.Content value="manual">
+      <WgettaStep title="Manual">
         <p>Manual selection UI placeholder (virtualized tree to come). Sample:</p>
         <ul>
           {#each sample.slice(0,10) as u}
@@ -144,21 +150,26 @@
           <button on:click={prev}>Back</button>
           <button on:click={gotoRun}>Continue to Run</button>
         </div>
+      </WgettaStep>
     </Tabs.Content>
 
     <Tabs.Content value="run">
+      <WgettaStep title="Run">
         <p>Run/Log placeholder.</p>
         <div style="margin-top:8px; display:flex; gap:8px;">
           <button on:click={prev}>Back</button>
           <button on:click={gotoDeploy}>Continue to Deploy</button>
         </div>
+      </WgettaStep>
     </Tabs.Content>
 
     <Tabs.Content value="deploy">
+      <WgettaStep title="Deploy">
         <p>Deploy placeholder.</p>
         <div style="margin-top:8px; display:flex; gap:8px;">
           <button on:click={prev}>Back</button>
         </div>
+      </WgettaStep>
     </Tabs.Content>
   </Tabs.Root>
 </main>
