@@ -30,7 +30,7 @@
         <Tabs.Trigger
           value={s}
           disabled={i > stepIndex()+1}
-          class="px-3 py-2 rounded border border-neutral-700 text-sm data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500"
+          class="px-3 py-2 rounded border border-neutral-700 text-sm text-neutral-300 hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-600 disabled:opacity-40 data-[state=active]:bg-neutral-800 data-[state=active]:border-neutral-500 data-[state=active]:text-white"
         >{labels[s]}</Tabs.Trigger>
       {/each}
     </Tabs.List>
