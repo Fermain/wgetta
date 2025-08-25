@@ -155,6 +155,10 @@ class Wgetta_Admin {
                     $js_rel = $entry['file'];
                     $js_path = $dist_dir . ltrim($js_rel, '/');
                     wp_enqueue_script('wgetta-app', $assets_url . ltrim($js_rel, '/'), array(), @filemtime($js_path), true);
+                    // Vite outputs ES modules; mark script as type=module
+                    if (function_exists('wp_script_add_data')) {
+                        wp_script_add_data('wgetta-app', 'type', 'module');
+                    }
                 }
             }
         }
