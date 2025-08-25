@@ -63,6 +63,7 @@
 		role={disabled ? "link" : undefined}
 		tabindex={disabled ? -1 : undefined}
 		{...restProps}
+		on:click
 	>
 		{@render children?.()}
 	</a>
@@ -74,6 +75,7 @@
 		{type}
 		{disabled}
 		{...restProps}
+		on:click
 	>
 		{@render children?.()}
 	</button>

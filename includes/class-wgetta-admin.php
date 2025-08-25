@@ -139,8 +139,14 @@ class Wgetta_Admin {
             if (file_exists($manifest)) {
                 $json = json_decode(file_get_contents($manifest), true);
                 if (is_array($json)) {
-                    // Vite Svelte template uses src/main.ts as entry
-                    $entry = isset($json['src/main.ts']) ? $json['src/main.ts'] : null;
+                    // Try common entry keys
+                    foreach (array('src/main.ts', 'src/main.js') as $k) {
+                        if (isset($json[$k]) && is_array($json[$k])) { $entry = $json[$k]; break; }
+                    }
+                    // If still not found, pick the first object with a 'file' key
+                    if (!$entry) {
+                        foreach ($json as $obj) { if (is_array($obj) && !empty($obj['file'])) { $entry = $obj; break; } }
+                    }
                 }
             }
             if (is_array($entry)) {
@@ -159,6 +165,19 @@ class Wgetta_Admin {
                     if (function_exists('wp_script_add_data')) {
                         wp_script_add_data('wgetta-app', 'type', 'module');
                     }
+                }
+            } else {
+                // Fallback to glob if manifest missing/unexpected
+                $js_files = glob($dist_dir . 'assets/index-*.js');
+                $css_files = glob($dist_dir . 'assets/index-*.css');
+                if (!empty($css_files)) {
+                    $css = $css_files[0];
+                    wp_enqueue_style('wgetta-app-fallback', $assets_url . 'assets/' . basename($css), array(), @filemtime($css));
+                }
+                if (!empty($js_files)) {
+                    $js = $js_files[0];
+                    wp_enqueue_script('wgetta-app', $assets_url . 'assets/' . basename($js), array(), @filemtime($js), true);
+                    if (function_exists('wp_script_add_data')) { wp_script_add_data('wgetta-app', 'type', 'module'); }
                 }
             }
         }
