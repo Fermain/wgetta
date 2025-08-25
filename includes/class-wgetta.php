@@ -69,6 +69,15 @@ class Wgetta {
                 'remainder' => array('type' => 'string', 'required' => true)
             )
         ));
+        register_rest_route('wgetta/v1', '/rules/simulate', array(
+            'methods' => 'POST',
+            'permission_callback' => function () { return current_user_can('manage_options'); },
+            'callback' => array($this, 'rest_rules_simulate'),
+            'args' => array(
+                'urls' => array('type' => 'array', 'required' => true),
+                'pattern' => array('type' => 'string', 'required' => true)
+            )
+        ));
     }
 
     /** REST: analyze discover command (dry run with --spider) */
@@ -80,8 +89,15 @@ class Wgetta {
         }
         try {
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            // Compose command with locked prefix
-            $cmd = 'wget --spider -nv ' . $remainder;
+            // Compose command with locked prefix and default home_url if no URL provided
+            $home = home_url('/');
+            $hasUrl = (bool) preg_match('#https?://#i', $remainder);
+            $cmd = 'wget --spider -nv ' . $remainder . ($hasUrl ? '' : (' ' . $home));
+            // If no explicit domains are provided, set --domains to site host
+            $host = parse_url($home, PHP_URL_HOST);
+            if ($host && !preg_match('/\-\-domains(=|\s)/', $remainder) && !preg_match('/\-H|\-\-span-hosts/', $remainder)) {
+                $cmd .= ' --domains=' . $host;
+            }
             $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
             // Create and run job
             $runner = new Wgetta_Job_Runner();
@@ -99,6 +115,30 @@ class Wgetta {
         } catch (Exception $e) {
             return new WP_REST_Response(array('success' => false, 'message' => $e->getMessage()), 500);
         }
+    }
+
+    /** REST: simulate a single regex pattern against a set of URLs */
+    public function rest_rules_simulate( WP_REST_Request $request ) {
+        $urls = $request->get_param('urls');
+        $pattern = (string) $request->get_param('pattern');
+        if (!is_array($urls)) { return new WP_REST_Response(array('success' => false, 'message' => 'Invalid urls'), 400); }
+        $pattern = trim($pattern);
+        if ($pattern === '') { return new WP_REST_Response(array('success' => false, 'message' => 'Pattern required'), 400); }
+        require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+        $val = Wgetta_Job_Runner::wgetta_validate_pattern($pattern);
+        if (!$val['ok']) { return new WP_REST_Response(array('success' => false, 'message' => $val['error']), 400); }
+        $total = count($urls);
+        $excluded = 0;
+        $examples = array();
+        foreach ($urls as $u) {
+            $u = (string) $u;
+            if ($u === '') { continue; }
+            if (Wgetta_Job_Runner::wgetta_posix_match($pattern, $u)) {
+                $excluded++;
+                if (count($examples) < 5) { $examples[] = $u; }
+            }
+        }
+        return new WP_REST_Response(array('success' => true, 'total' => $total, 'excluded' => $excluded, 'examples' => $examples));
     }
     
     /**

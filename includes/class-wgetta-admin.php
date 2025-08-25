@@ -125,7 +125,9 @@ class Wgetta_Admin {
             $this->plugin_name,
             'window.WGETTA = Object.assign({}, window.WGETTA || {}, {' .
             ' apiBase: ' . json_encode( esc_url_raw( rest_url('wgetta/v1') ) ) . ',' .
-            ' nonce: ' . json_encode( wp_create_nonce('wp_rest') ) .
+            ' nonce: ' . json_encode( wp_create_nonce('wp_rest') ) . ',' .
+            ' homeUrl: ' . json_encode( home_url('/') ) . ',' .
+            ' homeHost: ' . json_encode( parse_url( home_url('/'), PHP_URL_HOST ) ) .
             '});',
             'before'
         );

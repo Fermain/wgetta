@@ -5,7 +5,12 @@
 
   let summary: { total: number; samples: string[] } | null = null
   let remainderEl: HTMLSpanElement | null = null
-  let remainderText: string = '--recursive --level=2 https://example.com/'
+  let remainderText: string = (() => {
+    const h = (window as any).WGETTA?.homeUrl
+    const host = (window as any).WGETTA?.homeHost
+    const dom = host ? ` --domains=${host}` : ''
+    return `--recursive --level=2${dom}`
+  })()
   let loading = false
   let errorMsg: string | null = null
   let infoMsg: string | null = null
@@ -28,6 +33,7 @@
       const data = await res.json().catch(() => ({}))
       if (data && data.success) {
         summary = { total: Number(data.total || 0), samples: Array.isArray(data.samples) ? data.samples : [] }
+        try { sessionStorage.setItem('wgetta.urls', JSON.stringify(summary.samples)) } catch {}
         infoMsg = `Found ${summary.total} URL${summary.total === 1 ? '' : 's'}.`
       } else {
         summary = { total: 0, samples: [] }
