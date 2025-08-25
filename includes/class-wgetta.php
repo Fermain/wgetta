@@ -27,6 +27,7 @@ class Wgetta {
         add_action('admin_menu', array($this->admin, 'add_admin_menu'));
         add_action('admin_enqueue_scripts', array($this->admin, 'enqueue_styles'));
         add_action('admin_enqueue_scripts', array($this->admin, 'enqueue_scripts'));
+        add_action('rest_api_init', array($this, 'register_rest_routes'));
         
         // AJAX handlers
         add_action('wp_ajax_wgetta_save_settings', array($this->admin, 'ajax_save_settings'));
@@ -56,6 +57,48 @@ class Wgetta {
         // Cron job for background execution
         add_action('wgetta_execute_job', array($this, 'execute_background_job'), 10, 2);
         add_action('wgetta_execute_plan_job', array($this, 'execute_plan_job'), 10, 1);
+    }
+    
+    /** Register REST API routes */
+    public function register_rest_routes() {
+        register_rest_route('wgetta/v1', '/discover/analyze', array(
+            'methods' => 'POST',
+            'permission_callback' => function () { return current_user_can('manage_options'); },
+            'callback' => array($this, 'rest_discover_analyze'),
+            'args' => array(
+                'remainder' => array('type' => 'string', 'required' => true)
+            )
+        ));
+    }
+
+    /** REST: analyze discover command (dry run with --spider) */
+    public function rest_discover_analyze( WP_REST_Request $request ) {
+        $remainder = isset($request['remainder']) ? (string) $request['remainder'] : '';
+        $remainder = trim($remainder);
+        if ($remainder === '') {
+            return new WP_REST_Response(array('success' => false, 'message' => 'Missing command remainder'), 400);
+        }
+        try {
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+            // Compose command with locked prefix
+            $cmd = 'wget --spider -nv ' . $remainder;
+            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            // Create and run job
+            $runner = new Wgetta_Job_Runner();
+            $job_id = $runner->create_job('dry-run');
+            $runner->run($argv);
+            $urls = $runner->extract_urls();
+            $total = is_array($urls) ? count($urls) : 0;
+            $samples = array_slice($urls, 0, 10);
+            return new WP_REST_Response(array(
+                'success' => true,
+                'job_id' => $job_id,
+                'total' => $total,
+                'samples' => $samples,
+            ));
+        } catch (Exception $e) {
+            return new WP_REST_Response(array('success' => false, 'message' => $e->getMessage()), 500);
+        }
     }
     
     /**

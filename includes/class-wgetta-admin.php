@@ -110,6 +110,16 @@ class Wgetta_Admin {
             )
         );
 
+        // Provide REST info for SPA
+        wp_add_inline_script(
+            $this->plugin_name,
+            'window.WGETTA = Object.assign({}, window.WGETTA || {}, {' .
+            ' apiBase: ' . json_encode( esc_url_raw( rest_url('wgetta/v1') ) ) . ',' .
+            ' nonce: ' . json_encode( wp_create_nonce('wp_rest') ) .
+            '});',
+            'before'
+        );
+
         // Load FancyTree assets on Plan Copy page only
         if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
             wp_enqueue_style(

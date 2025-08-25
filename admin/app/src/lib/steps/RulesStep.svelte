@@ -31,56 +31,56 @@
 <WgettaStep title="Rules">
   <div>
     <div class="mb-2 flex gap-2">
-      <Button variant="outline">Test patterns</Button>
+      <Button variant="outline" size="sm">Test patterns</Button>
     </div>
-    <div class="overflow-auto">
+    <div class="overflow-auto rounded border border-neutral-800">
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-neutral-400">
-            <th class="py-2 pr-2 w-10">On</th>
-            <th class="py-2 pr-2">Pattern</th>
-            <th class="py-2 pr-2 w-64">Note</th>
-            <th class="py-2 pr-2 w-16"></th>
+            <th class="py-1.5 px-2 w-10">On</th>
+            <th class="py-1.5 px-2">Pattern</th>
+            <th class="py-1.5 px-2 w-64">Note</th>
+            <th class="py-1.5 px-2 w-12"></th>
           </tr>
         </thead>
         <tbody>
           {#each rows as row, i}
             <tr class="border-t border-neutral-800">
-              <td class="py-2 pr-2 align-top">
+              <td class="py-1.5 px-2 align-top">
                 <Checkbox bind:checked={row.enabled} />
               </td>
-              <td class="py-2 pr-2 align-top">
-                <Input placeholder="POSIX regex" bind:value={row.pattern} class="w-full" />
+              <td class="py-1.5 px-2 align-top">
+                <Input placeholder="POSIX regex" bind:value={row.pattern} class="w-full font-mono" />
               </td>
-              <td class="py-2 pr-2 align-top">
+              <td class="py-1.5 px-2 align-top">
                 <Input placeholder="note" bind:value={row.note} />
               </td>
-              <td class="py-2 pr-2 align-top text-right">
-                <Button variant="outline" on:click={() => removeRow(i)}>Remove</Button>
+              <td class="py-1.5 px-2 align-top text-right">
+                <Button variant="outline" size="sm" on:click={() => removeRow(i)} aria-label="Remove">×</Button>
               </td>
             </tr>
           {/each}
           <!-- Add new pattern row -->
           <tr class="border-t border-neutral-800">
-            <td class="py-2 pr-2 align-top">
+            <td class="py-1.5 px-2 align-top">
               <span class="text-neutral-500">+</span>
             </td>
-            <td class="py-2 pr-2 align-top">
-              <Input placeholder="Add new pattern" bind:value={newPattern} class="w-full" />
+            <td class="py-1.5 px-2 align-top">
+              <Input placeholder="Add new pattern" bind:value={newPattern} class="w-full font-mono" />
             </td>
-            <td class="py-2 pr-2 align-top">
+            <td class="py-1.5 px-2 align-top">
               <Input placeholder="note (optional)" bind:value={newNote} />
             </td>
-            <td class="py-2 pr-2 align-top text-right">
-              <Button variant="outline" on:click={addRow} disabled={!newPattern.trim()}>Add</Button>
+            <td class="py-1.5 px-2 align-top text-right">
+              <Button variant="outline" size="sm" on:click={addRow} disabled={!newPattern.trim()}>Add</Button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
     <div class="mt-2 flex gap-2">
-      <Button variant="outline" on:click={() => onBack?.()}>Back</Button>
-      <Button variant="outline" on:click={() => onNext?.()}>Continue</Button>
+      <Button variant="outline" size="sm" on:click={() => onBack?.()}>Back</Button>
+      <Button variant="outline" size="sm" on:click={() => onNext?.()}>Continue</Button>
     </div>
   </div>
 </WgettaStep>

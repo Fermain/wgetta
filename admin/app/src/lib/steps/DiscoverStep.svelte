@@ -6,11 +6,26 @@
   let summary: { total: number; samples: string[] } | null = null
   let remainderEl: HTMLSpanElement | null = null
 
-  function analyze() {
+  async function analyze() {
     const txt = (remainderEl?.textContent || '').trim()
-    const urls = (txt.match(/https?:\/\/[^\s]+/g) || []).slice(0, 5)
-    const total = (txt.match(/https?:\/\/[^\s]+/g) || []).length
-    summary = { total, samples: urls }
+    if (!txt) return
+    try {
+      const base = (window as any).WGETTA?.apiBase || '/wp-json/wgetta/v1'
+      const nonce = (window as any).WGETTA?.nonce || ''
+      const res = await fetch(`${base}/discover/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+        body: JSON.stringify({ remainder: txt })
+      })
+      const data = await res.json()
+      if (data && data.success) {
+        summary = { total: Number(data.total || 0), samples: Array.isArray(data.samples) ? data.samples : [] }
+      } else {
+        summary = { total: 0, samples: [] }
+      }
+    } catch (e) {
+      summary = { total: 0, samples: [] }
+    }
   }
 </script>
 
