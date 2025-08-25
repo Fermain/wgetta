@@ -25,6 +25,16 @@
       const base = (window as any).WGETTA?.apiBase || '/wp-json/wgetta/v1'
       const nonce = (window as any).WGETTA?.nonce || ''
       if (!base) { throw new Error('REST base missing') }
+      // Persist parsed rules/domains for continuity
+      try {
+        const reject = Array.from(txt.matchAll(/--reject-regex\s+([^\s].*?)(?=\s--|\shttps?:|$)/g)).map(m=>m[1].trim())
+        const accept = Array.from(txt.matchAll(/--accept-regex\s+([^\s].*?)(?=\s--|\shttps?:|$)/g)).map(m=>m[1].trim())
+        const domains = (()=>{ const m = txt.match(/--domains=([^\s]+)/); return m? m[1].split(','): [] })()
+        sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(reject))
+        sessionStorage.setItem('wgetta.rules.accept', JSON.stringify(accept))
+        sessionStorage.setItem('wgetta.domains', JSON.stringify(domains))
+        sessionStorage.setItem('wgetta.command', txt)
+      } catch {}
       const res = await fetch(`${base}/discover/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
@@ -33,7 +43,10 @@
       const data = await res.json().catch(() => ({}))
       if (data && data.success) {
         summary = { total: Number(data.total || 0), samples: Array.isArray(data.samples) ? data.samples : [] }
-        try { sessionStorage.setItem('wgetta.urls', JSON.stringify(summary.samples)) } catch {}
+        try {
+          sessionStorage.setItem('wgetta.urls', JSON.stringify(summary.samples))
+          if (data.job_id) sessionStorage.setItem('wgetta.job_id', String(data.job_id))
+        } catch {}
         infoMsg = `Found ${summary.total} URL${summary.total === 1 ? '' : 's'}.`
       } else {
         summary = { total: 0, samples: [] }

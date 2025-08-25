@@ -74,8 +74,9 @@ class Wgetta {
             'permission_callback' => function () { return current_user_can('manage_options'); },
             'callback' => array($this, 'rest_rules_simulate'),
             'args' => array(
-                'urls' => array('type' => 'array', 'required' => true),
-                'pattern' => array('type' => 'string', 'required' => true)
+                'pattern' => array('type' => 'string', 'required' => true),
+                'urls' => array('type' => 'array', 'required' => false),
+                'job_id' => array('type' => 'string', 'required' => false),
             )
         ));
     }
@@ -120,13 +121,25 @@ class Wgetta {
     /** REST: simulate a single regex pattern against a set of URLs */
     public function rest_rules_simulate( WP_REST_Request $request ) {
         $urls = $request->get_param('urls');
+        $job_id = $request->get_param('job_id');
         $pattern = (string) $request->get_param('pattern');
-        if (!is_array($urls)) { return new WP_REST_Response(array('success' => false, 'message' => 'Invalid urls'), 400); }
         $pattern = trim($pattern);
         if ($pattern === '') { return new WP_REST_Response(array('success' => false, 'message' => 'Pattern required'), 400); }
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
         $val = Wgetta_Job_Runner::wgetta_validate_pattern($pattern);
         if (!$val['ok']) { return new WP_REST_Response(array('success' => false, 'message' => $val['error']), 400); }
+        if (!is_array($urls)) {
+            // If no URLs provided, try to load from job_id
+            if (is_string($job_id) && $job_id !== '') {
+                $upload_dir = wp_upload_dir();
+                $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . basename($job_id);
+                $file = $job_dir . '/urls.json';
+                if (file_exists($file)) {
+                    $urls = json_decode(file_get_contents($file), true);
+                }
+            }
+        }
+        if (!is_array($urls)) { $urls = array(); }
         $total = count($urls);
         $excluded = 0;
         $examples = array();

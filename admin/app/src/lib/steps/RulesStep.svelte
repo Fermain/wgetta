@@ -8,10 +8,17 @@
   import { Label } from '$lib/components/ui/label/index.js'
 
   type Row = { enabled: boolean; pattern: string; note: string; preview?: string }
-  let rows: Row[] = [
-    { enabled: true, pattern: '', note: '' },
-    { enabled: true, pattern: '^https?://example.com/wp-admin/', note: '' }
-  ]
+  let rows: Row[] = []
+  let domains: string[] = []
+  // Initialize from session
+  try {
+    const rej = JSON.parse(sessionStorage.getItem('wgetta.rules.reject') || '[]') as string[]
+    if (Array.isArray(rej) && rej.length) {
+      rows = rej.map(p => ({ enabled: true, pattern: p, note: '' }))
+    }
+    const doms = JSON.parse(sessionStorage.getItem('wgetta.domains') || '[]') as string[]
+    if (Array.isArray(doms)) { domains = doms }
+  } catch {}
   let newPattern = ''
   let newNote = ''
 
@@ -21,10 +28,12 @@
     rows = [...rows, { enabled: true, pattern: p, note: newNote.trim() }]
     newPattern = ''
     newNote = ''
+    try { sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(rows.map(r=>r.pattern))) } catch {}
   }
 
   function removeRow(i: number) {
     rows = rows.filter((_, idx) => idx !== i)
+    try { sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(rows.map(r=>r.pattern))) } catch {}
   }
 
   async function simulate(i: number) {
@@ -32,15 +41,10 @@
     const nonce = (window as any).WGETTA?.nonce || ''
     const pattern = rows[i]?.pattern?.trim()
     if (!pattern) return
-    // Use last analyze job urls.json if present via a lightweight endpoint: send samples from UI for now
-    // For MVP, re-use Discover samples stored temporarily in sessionStorage by Discover step if present
-    let urls: string[] = []
-    try { urls = JSON.parse(sessionStorage.getItem('wgetta.urls') || '[]') } catch {}
-    if (!urls.length) return
-    const res = await fetch(`${base}/rules/simulate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-      body: JSON.stringify({ urls, pattern })
-    })
+    const job_id = sessionStorage.getItem('wgetta.job_id') || undefined
+    const urls = (()=>{ try { return JSON.parse(sessionStorage.getItem('wgetta.urls')||'[]') } catch { return [] } })()
+    const body = job_id ? { job_id, pattern } : { urls, pattern }
+    const res = await fetch(`${base}/rules/simulate`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce }, body: JSON.stringify(body) })
     const data = await res.json().catch(()=>({}))
     if (data && data.success) {
       rows[i].preview = `Excludes ${data.excluded}/${data.total}`
@@ -107,6 +111,17 @@
           </tr>
         </tbody>
       </table>
+    </div>
+    <div class="mt-4">
+      <h3 class="text-sm text-neutral-400 mb-2">Domains</h3>
+      <div class="flex flex-wrap gap-2">
+        {#each domains as d, i}
+          <span class="inline-flex items-center gap-1 border border-neutral-800 rounded px-2 py-0.5">
+            <code>{d}</code>
+            <Button size="sm" variant="ghost" aria-label="Remove domain" onclick={() => { domains = domains.filter((_,idx)=>idx!==i); try{sessionStorage.setItem('wgetta.domains', JSON.stringify(domains))}catch{} }}>×</Button>
+          </span>
+        {/each}
+      </div>
     </div>
     <div class="mt-2 flex gap-2">
       <Button variant="outline" size="sm" on:click={() => onBack?.()}>Back</Button>
