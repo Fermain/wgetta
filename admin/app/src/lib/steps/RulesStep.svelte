@@ -1,6 +1,5 @@
 <script lang="ts">
-  export let onNext: (() => void) | undefined
-  export let onBack: (() => void) | undefined
+  let { onNext = undefined, onBack = undefined }: { onNext?: () => void; onBack?: () => void } = $props()
   import WgettaStep from '../WgettaStep.svelte'
   import { Button } from '$lib/components/ui/button/index.js'
   import { Checkbox } from '$lib/components/ui/checkbox/index.js'
@@ -8,19 +7,22 @@
   import { Label } from '$lib/components/ui/label/index.js'
 
   type Row = { enabled: boolean; pattern: string; note: string; preview?: string }
-  let rows: Row[] = []
-  let domains: string[] = []
-  // Initialize from session
-  try {
-    const rej = JSON.parse(sessionStorage.getItem('wgetta.rules.reject') || '[]') as string[]
-    if (Array.isArray(rej) && rej.length) {
-      rows = rej.map(p => ({ enabled: true, pattern: p, note: '' }))
-    }
-    const doms = JSON.parse(sessionStorage.getItem('wgetta.domains') || '[]') as string[]
-    if (Array.isArray(doms)) { domains = doms }
-  } catch {}
-  let newPattern = ''
-  let newNote = ''
+  let rows = $state<Row[]>([])
+  let domains = $state<string[]>([])
+  let newDomain = $state('')
+  // Initialize from session on mount
+  $effect(() => {
+    try {
+      const rej = JSON.parse(sessionStorage.getItem('wgetta.rules.reject') || '[]') as string[]
+      if (Array.isArray(rej) && rej.length) {
+        rows = rej.map(p => ({ enabled: true, pattern: p, note: '' }))
+      }
+      const doms = JSON.parse(sessionStorage.getItem('wgetta.domains') || '[]') as string[]
+      if (Array.isArray(doms)) { domains = doms }
+    } catch {}
+  })
+  let newPattern = $state('')
+  let newNote = $state('')
 
   function addRow() {
     const p = newPattern.trim()
@@ -34,6 +36,14 @@
   function removeRow(i: number) {
     rows = rows.filter((_, idx) => idx !== i)
     try { sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(rows.map(r=>r.pattern))) } catch {}
+  }
+
+  function addDomain() {
+    const d = newDomain.trim()
+    if (!d) return
+    domains = [...domains, d]
+    newDomain = ''
+    try { sessionStorage.setItem('wgetta.domains', JSON.stringify(domains)) } catch {}
   }
 
   async function simulate(i: number) {
@@ -121,6 +131,10 @@
             <Button size="sm" variant="ghost" aria-label="Remove domain" onclick={() => { domains = domains.filter((_,idx)=>idx!==i); try{sessionStorage.setItem('wgetta.domains', JSON.stringify(domains))}catch{} }}>×</Button>
           </span>
         {/each}
+      </div>
+      <div class="mt-2 flex gap-2 items-center">
+        <Input placeholder="Add domain" bind:value={newDomain} class="w-64" />
+        <Button variant="outline" size="sm" onclick={addDomain} disabled={!newDomain.trim()}>Add</Button>
       </div>
     </div>
     <div class="mt-2 flex gap-2">

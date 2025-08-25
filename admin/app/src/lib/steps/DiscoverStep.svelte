@@ -25,13 +25,46 @@
       const base = (window as any).WGETTA?.apiBase || '/wp-json/wgetta/v1'
       const nonce = (window as any).WGETTA?.nonce || ''
       if (!base) { throw new Error('REST base missing') }
-      // Persist parsed rules/domains for continuity
+      // Persist parsed rules/domains for continuity (robust shell-like token parsing)
       try {
-        const reject = Array.from(txt.matchAll(/--reject-regex\s+([^\s].*?)(?=\s--|\shttps?:|$)/g)).map(m=>m[1].trim())
-        const accept = Array.from(txt.matchAll(/--accept-regex\s+([^\s].*?)(?=\s--|\shttps?:|$)/g)).map(m=>m[1].trim())
-        const domains = (()=>{ const m = txt.match(/--domains=([^\s]+)/); return m? m[1].split(','): [] })()
-        sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(reject))
-        sessionStorage.setItem('wgetta.rules.accept', JSON.stringify(accept))
+        const tokens: string[] = []
+        let cur = ''
+        let inS = false, inD = false, esc = false
+        for (const ch of txt) {
+          if (esc) { cur += ch; esc = false; continue }
+          if (ch === '\\' && !inS) { esc = true; continue }
+          if (ch === "'" && !inD) { inS = !inS; continue }
+          if (ch === '"' && !inS) { inD = !inD; continue }
+          if (!inS && !inD && /\s/.test(ch)) { if (cur) { tokens.push(cur); cur = '' } continue }
+          cur += ch
+        }
+        if (cur) tokens.push(cur)
+        const stripQuotes = (s:string) => s.replace(/^['"]|['"]$/g, '')
+        const getOptVal = (name:string, idx:number) => {
+          const tok = tokens[idx]
+          if (tok.startsWith(name + '=')) return tok.slice(name.length+1)
+          if (tok === name && tokens[idx+1]) return tokens[idx+1]
+          return undefined
+        }
+        const rejects: string[] = []
+        const accepts: string[] = []
+        let domainsVal: string | undefined
+        for (let i=0;i<tokens.length;i++) {
+          const t = tokens[i]
+          if (t === '--reject-regex' || t.startsWith('--reject-regex=')) {
+            const v = getOptVal('--reject-regex', i)
+            if (v) rejects.push(stripQuotes(v))
+          } else if (t === '--accept-regex' || t.startsWith('--accept-regex=')) {
+            const v = getOptVal('--accept-regex', i)
+            if (v) accepts.push(stripQuotes(v))
+          } else if (t === '--domains' || t.startsWith('--domains=')) {
+            const v = getOptVal('--domains', i)
+            if (v) domainsVal = stripQuotes(v)
+          }
+        }
+        const domains = domainsVal ? domainsVal.split(',').map(s=>s.trim()).filter(Boolean) : []
+        sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(rejects))
+        sessionStorage.setItem('wgetta.rules.accept', JSON.stringify(accepts))
         sessionStorage.setItem('wgetta.domains', JSON.stringify(domains))
         sessionStorage.setItem('wgetta.command', txt)
       } catch {}
