@@ -132,21 +132,30 @@ class Wgetta_Admin {
 
         // Enqueue built SPA on the test page
         if (isset($_GET['page']) && $_GET['page'] === 'wgetta-app') {
-            $assets_dir = WGETTA_PLUGIN_DIR . 'admin/dist/assets/';
-            $assets_url = WGETTA_PLUGIN_URL . 'admin/dist/assets/';
-            $css = '';
-            $js = '';
-            if (is_dir($assets_dir)) {
-                $css_files = glob($assets_dir . 'index-*.css');
-                $js_files = glob($assets_dir . 'index-*.js');
-                if (!empty($css_files)) { $css = $css_files[0]; }
-                if (!empty($js_files)) { $js = $js_files[0]; }
+            $dist_dir = WGETTA_PLUGIN_DIR . 'admin/dist/';
+            $assets_url = WGETTA_PLUGIN_URL . 'admin/dist/';
+            $manifest = $dist_dir . '.vite/manifest.json';
+            $entry = null;
+            if (file_exists($manifest)) {
+                $json = json_decode(file_get_contents($manifest), true);
+                if (is_array($json)) {
+                    // Vite Svelte template uses src/main.ts as entry
+                    $entry = isset($json['src/main.ts']) ? $json['src/main.ts'] : null;
+                }
             }
-            if ($css) {
-                wp_enqueue_style('wgetta-app', $assets_url . basename($css), array(), @filemtime($css));
-            }
-            if ($js) {
-                wp_enqueue_script('wgetta-app', $assets_url . basename($js), array(), @filemtime($js), true);
+            if (is_array($entry)) {
+                // CSS first (if any)
+                if (!empty($entry['css']) && is_array($entry['css'])) {
+                    foreach ($entry['css'] as $css_rel) {
+                        $css_path = $dist_dir . ltrim($css_rel, '/');
+                        wp_enqueue_style('wgetta-app-' . md5($css_rel), $assets_url . ltrim($css_rel, '/'), array(), @filemtime($css_path));
+                    }
+                }
+                if (!empty($entry['file'])) {
+                    $js_rel = $entry['file'];
+                    $js_path = $dist_dir . ltrim($js_rel, '/');
+                    wp_enqueue_script('wgetta-app', $assets_url . ltrim($js_rel, '/'), array(), @filemtime($js_path), true);
+                }
             }
         }
 
