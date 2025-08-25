@@ -61,6 +61,16 @@ class Wgetta_Admin {
             'wgetta-gitlab-settings',
             array($this, 'display_git_settings_page')
         );
+
+        // Svelte app test page
+        add_submenu_page(
+            'wgetta-plan-copy',
+            'Wgetta (Beta)',
+            'Wgetta (Beta)',
+            'manage_options',
+            'wgetta-app',
+            array($this, 'display_app_page')
+        );
     }
     
     /**
@@ -120,6 +130,26 @@ class Wgetta_Admin {
             'before'
         );
 
+        // Enqueue built SPA on the test page
+        if (isset($_GET['page']) && $_GET['page'] === 'wgetta-app') {
+            $assets_dir = WGETTA_PLUGIN_DIR . 'admin/dist/assets/';
+            $assets_url = WGETTA_PLUGIN_URL . 'admin/dist/assets/';
+            $css = '';
+            $js = '';
+            if (is_dir($assets_dir)) {
+                $css_files = glob($assets_dir . 'index-*.css');
+                $js_files = glob($assets_dir . 'index-*.js');
+                if (!empty($css_files)) { $css = $css_files[0]; }
+                if (!empty($js_files)) { $js = $js_files[0]; }
+            }
+            if ($css) {
+                wp_enqueue_style('wgetta-app', $assets_url . basename($css), array(), @filemtime($css));
+            }
+            if ($js) {
+                wp_enqueue_script('wgetta-app', $assets_url . basename($js), array(), @filemtime($js), true);
+            }
+        }
+
         // Load FancyTree assets on Plan Copy page only
         if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
             wp_enqueue_style(
@@ -163,6 +193,14 @@ class Wgetta_Admin {
 
     public function display_git_settings_page() {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-git-settings.php';
+    }
+
+    /** Render Svelte app container */
+    public function display_app_page() {
+        echo '<div class="wrap">';
+        echo '<h1>Wgetta (Beta)</h1>';
+        echo '<div id="app"></div>';
+        echo '</div>';
     }
 
     /** Save GitLab settings */
