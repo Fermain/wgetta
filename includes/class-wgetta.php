@@ -18,6 +18,7 @@ class Wgetta {
     private function load_dependencies() {
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-admin.php';
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
+        require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-mirrorer.php';
     }
     
     public function run() {
@@ -146,54 +147,53 @@ class Wgetta {
         
         try {
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            
-            // Prepare argv
+
+            // Prepare argv and extract seed URLs
             $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
-            
-            // Apply saved regex patterns (CLI parity with UI)
+            $seeds = array();
+            foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+
+            // Build combined reject pattern from saved patterns
             $patterns = get_option('wgetta_regex_patterns', array());
-            if (is_array($patterns)) {
-                $patterns = array_map('trim', $patterns);
-            }
+            if (is_array($patterns)) { $patterns = array_map('trim', $patterns); }
+            $combined_pattern = '';
             if (!empty($patterns)) {
                 foreach ($patterns as $p) {
                     if ($p === '') { continue; }
                     $v = Wgetta_Job_Runner::wgetta_validate_pattern($p);
-                    if (!$v['ok']) {
-                        WP_CLI::error('Invalid exclusion pattern "' . $p . '": ' . $v['error']);
-                    }
+                    if (!$v['ok']) { WP_CLI::error('Invalid pattern "' . $p . '": ' . $v['error']); }
                 }
-                // Build combined POSIX ERE pattern
                 $combined_pattern = '(' . implode(')|(', $patterns) . ')';
-                $argv[] = '--reject-regex=' . $combined_pattern;
                 WP_CLI::line('Applied regex exclusions: ' . $combined_pattern);
             }
-            
-            WP_CLI::line('Starting execution with command: ' . implode(' ', $argv));
-            
-            // Create and run job
+
+            // Create job
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('execute');
-            
             WP_CLI::line('Job ID: ' . $job_id);
-            
-            // Run the job
-            $runner->run($argv);
-            
-            // Generate manifest
+
+            // Mirror recursively using mirrorer
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+            $mirrorer = new Wgetta_Mirrorer();
+            $mirrorer->mirror($seeds, $job_dir, true, $log_file, $combined_pattern);
+
+            // Manifest
             $files = $runner->generate_manifest();
-            
+
             $status = $runner->get_status();
             $label = ($status && isset($status['status']) && $status['status'] !== 'completed') ? 'Execution completed with warnings' : 'Execution completed';
             WP_CLI::success($label . '. Downloaded ' . count($files) . ' files.');
-            
+
             if (count($files) > 0) {
                 WP_CLI::line("\nFirst 10 files:");
                 foreach (array_slice($files, 0, 10) as $file) {
                     WP_CLI::line('  - ' . $file);
                 }
             }
-            
+
         } catch (Exception $e) {
             WP_CLI::error('Execution failed: ' . $e->getMessage());
         }
@@ -209,17 +209,35 @@ class Wgetta {
             $runner = new Wgetta_Job_Runner();
             $runner->set_job($job_id);
             
-            // Execute the job
-            $runner->run($argv);
-            
-            // Generate manifest for successful execution
-            $runner->generate_manifest();
-            // Create downloadable archive
-            $runner->create_archive_zip('archive.zip');
-            // Persist plan name if provided (for later display/deploy)
-            if (!empty($argv) && is_array($argv)) {
-                // no-op here; UI can call set_metadata via a dedicated endpoint if needed
+            // Mark running
+            $runner->set_metadata(array('status' => 'running', 'started' => time()));
+
+            // Extract seed URLs and reject pattern from argv
+            $seeds = array();
+            $reject = '';
+            foreach ((array) $argv as $tok) {
+                if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; continue; }
+                if (strpos($tok, '--reject-regex=') === 0) { $reject = substr($tok, strlen('--reject-regex=')); }
             }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+
+            // Mirror recursively
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+            $mirrorer = new Wgetta_Mirrorer();
+            $mirrorer->mirror($seeds, $job_dir, true, $log_file, $reject);
+
+            // Generate manifest and archive
+            $runner->generate_manifest();
+            $runner->create_archive_zip('archive.zip');
+
+            // Mark completed
+            $status = $runner->get_status();
+            if (!is_array($status)) { $status = array(); }
+            $status['status'] = 'completed';
+            $status['completed'] = time();
+            $runner->set_metadata($status);
             
         } catch (Exception $e) {
             // Job will be marked as failed by the runner
@@ -283,23 +301,34 @@ class Wgetta {
             // Ensure directory structure (host/path) is created for each URL
             $base[] = '--force-directories';
 
-            // Execute each URL
-            // De-duplicate planned URLs after stripping #SKIP markers
-            $seen = array();
+            // Build set of included URLs
+            $targets = array();
             foreach ($urls as $url) {
-                // Skip entries marked as '#SKIP'
                 if (strpos($url, ' #SKIP') !== false) { continue; }
                 $clean = trim($url);
-                if (isset($seen[$clean])) { continue; }
-                $seen[$clean] = true;
-                $runner->run(array_merge($base, array($clean)));
+                if ($clean !== '') { $targets[$clean] = true; }
             }
 
-            // Manifest
+            // Mark running status
+            $runner->set_metadata(array('status' => 'running', 'started' => time()));
+
+            // Mirror using static-mirror style wget invocation into the job directory
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+            $mirrorer = new Wgetta_Mirrorer();
+            $mirrorer->mirror(array_keys($targets), $job_dir, false, $log_file);
+
+            // Manifest and archive
             $runner->generate_manifest();
-            // Create downloadable archive
             $runner->create_archive_zip('archive.zip');
-            // Store plan name if provided
+
+            // Completed status
+            $status = $runner->get_status();
+            if (!is_array($status)) { $status = array(); }
+            $status['status'] = 'completed';
+            $status['completed'] = time();
+            $runner->set_metadata($status);
         } catch (Exception $e) {
             error_log('Wgetta plan job failed: ' . $e->getMessage());
         }
