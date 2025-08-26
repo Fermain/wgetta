@@ -110,8 +110,8 @@ class Wgetta_Admin {
             )
         );
 
-        // Load FancyTree assets on Plan Copy page only
-        if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
+        // Load FancyTree assets on Create Plan and Run Plan pages
+        if (isset($_GET['page']) && in_array($_GET['page'], array('wgetta-plan-copy', 'wgetta-plan-run'), true)) {
             wp_enqueue_style(
                 'fancytree-css',
                 'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/skin-win8/ui.fancytree.min.css',

@@ -16,6 +16,10 @@ if (!defined('ABSPATH')) { exit; }
 
     <div class="wgetta-card">
         <h2>Status</h2>
+        <div style="margin:10px 0;">
+            <input type="text" id="run-plan-tree-filter" class="regular-text" placeholder="Filter included URLs..." style="min-width:260px;" />
+        </div>
+        <div id="run-plan-tree" class="wgetta-url-list" style="max-height:280px; overflow:auto; margin-bottom:10px;"></div>
         <div id="run-plan-progress" class="wgetta-progress" style="display:none;">
             <div class="wgetta-progress-info">
                 <span id="run-plan-progress-status">Idle</span>

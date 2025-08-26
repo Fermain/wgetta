@@ -436,6 +436,61 @@
                 });
             }, 1000);
         }
+
+        // Build read-only tree for a selected named plan
+        $('#run-plan-select').on('change', function(){
+            var name = $(this).val();
+            $('#run-plan-tree').empty();
+            if (!name) return;
+            $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_load', nonce: $('#wgetta_nonce').val(), name: name }, function(resp){
+                if (resp && resp.success && Array.isArray(resp.urls)) {
+                    var urls = resp.urls.filter(function(u){ return typeof u === 'string' && u.indexOf(' #SKIP') === -1; });
+                    buildReadOnlyTree('#run-plan-tree', '#run-plan-tree-filter', urls);
+                }
+            });
+        });
+
+        function buildReadOnlyTree(treeSel, filterSel, urls) {
+            var hosts = {};
+            urls.forEach(function(raw){
+                try {
+                    var a = document.createElement('a'); a.href = raw;
+                    var host = a.host || 'root';
+                    var parts = (a.pathname || '/').split('/').filter(Boolean);
+                    hosts[host] = hosts[host] || { title: host, folder: true, expanded: true, children: [] };
+                    var branch = hosts[host];
+                    var pathAcc = '';
+                    for (var i = 0; i < parts.length; i++) {
+                        pathAcc += '/' + parts[i];
+                        var found = (branch.children || []).find(function(c){ return c.key === pathAcc; });
+                        if (!found) {
+                           found = { title: parts[i], key: pathAcc, folder: i < parts.length - 1, children: [] };
+                           branch.children.push(found);
+                        }
+                        branch = found;
+                    }
+                    // Add leaf node (no checkbox)
+                    var leafTitle = a.pathname.replace(/\/$/, '') || a.pathname;
+                    branch.children.push({ title: leafTitle, icon: false });
+                } catch(e){}
+            });
+            var source = Object.keys(hosts).map(function(h){ return hosts[h]; });
+            var $treeEl = $(treeSel);
+            var isInit = $treeEl.hasClass('ui-fancytree') || !!$treeEl.data('ui-fancytree') || !!$treeEl.data('fancytree');
+            if (isInit) { try { $treeEl.fancytree('destroy'); } catch(e){} }
+            $treeEl.empty();
+            $treeEl.fancytree({
+                checkbox: false,
+                selectMode: 1,
+                source: source,
+                extensions: ['filter'],
+                filter: { autoApply: true, counter: true, fuzzy: false, mode: 'hide' }
+            });
+            $(filterSel).off('input').on('input', function(){
+                var tree = $treeEl.fancytree('getTree');
+                tree.filterNodes($(this).val());
+            });
+        }
     }
     
     function showExecutionResults(data) {
