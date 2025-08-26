@@ -376,11 +376,14 @@
         $('#run-plan-execute').on('click', function(){
             var name = $('#run-plan-select').val();
             if (!name) { showNotice('error', 'Please select a plan'); return; }
+            var $btn = $(this), $spin = $btn.siblings('.spinner');
+            $btn.prop('disabled', true); $spin.addClass('is-active');
             // Create a job from the named plan
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_create', nonce: $('#wgetta_nonce').val(), name: name }, function(createResp){
                 if (createResp && createResp.success) {
                     var jobId = createResp.job_id;
-                    $('#run-plan-status').text('Plan queued (Job ' + jobId + ')');
+                    // Reveal status section when execution begins
+                    $('#run-plan-status-card').show();
                     $('#run-plan-progress').show();
                     $('#run-plan-progress-status').text('Queued');
                     $('#run-plan-console').text('');
@@ -388,13 +391,17 @@
                     $.post(wgetta_ajax.ajax_url, { action: 'wgetta_set_job_meta', nonce: $('#wgetta_nonce').val(), job_id: jobId, meta: { plan_name: name } });
                     // Queue execution
                     $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_execute', nonce: $('#wgetta_nonce').val(), job_id: jobId }, function(execResp){
+                        $spin.removeClass('is-active');
                         if (execResp && execResp.success) {
                             startRunPlanPolling(jobId);
                         } else {
+                            $btn.prop('disabled', false);
                             showNotice('error', (execResp && execResp.message) ? execResp.message : 'Failed to start plan');
                         }
                     });
                 } else {
+                    $spin.removeClass('is-active');
+                    $btn.prop('disabled', false);
                     showNotice('error', (createResp && createResp.message) ? createResp.message : 'Failed to prepare plan');
                 }
             });
@@ -449,7 +456,8 @@
             var name = $(this).val();
             $('#run-plan-tree').empty();
             if (!name) { $('#run-plan-preview-card').hide(); $('#run-plan-status-card').hide(); return; }
-            $('#run-plan-preview-card').show(); $('#run-plan-status-card').show();
+            // Show preview on selection; defer status until Run is pressed
+            $('#run-plan-preview-card').show(); $('#run-plan-status-card').hide();
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_load', nonce: $('#wgetta_nonce').val(), name: name }, function(resp){
                 if (resp && resp.success && Array.isArray(resp.urls)) {
                     var urls = resp.urls.filter(function(u){ return typeof u === 'string' && u.indexOf(' #SKIP') === -1; });
