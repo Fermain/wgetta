@@ -209,8 +209,8 @@
             }, function(resp) {
                 if (resp && resp.success) {
                     var runUrl = (typeof wgetta_ajax !== 'undefined' && wgetta_ajax.ajax_url)
-                        ? wgetta_ajax.ajax_url.replace('admin-ajax.php', 'admin.php?page=wgetta-plan-run')
-                        : 'admin.php?page=wgetta-plan-run';
+                        ? wgetta_ajax.ajax_url.replace('admin-ajax.php', 'admin.php?page=wgetta-plan-run&plan=' + encodeURIComponent(name))
+                        : ('admin.php?page=wgetta-plan-run&plan=' + encodeURIComponent(name));
                     window.location.href = runUrl;
                 } else {
                     showNotice('error', (resp && resp.message) ? resp.message : 'Save failed');
