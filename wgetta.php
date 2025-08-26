@@ -70,12 +70,8 @@ function wgetta_activate() {
     }
 
     if (!empty($missing_deps) && !(defined('WGETTA_SKIP_DEP_CHECKS') && WGETTA_SKIP_DEP_CHECKS)) {
-        wp_die(
-            'This plugin requires the following command-line tools to be installed: ' .
-            implode(', ', $missing_deps) . '. Please install them and try again.',
-            'Missing Dependencies',
-            array('back_link' => true)
-        );
+        // Soft warning only; do not block activation as we can mirror without wget in future.
+        update_option('wgetta_missing_deps', $missing_deps);
     }
     
     // Initialize default command option (safe default uses --spider)

@@ -6,16 +6,24 @@ if (!defined('ABSPATH')) { exit; }
     <h1>Run Plan</h1>
 
     <div class="wgetta-card">
-        <p>Select a previously saved plan and run it. This will execute the plan as-is.</p>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <select id="run-plan-select" class="regular-text" style="min-width:260px;"></select>
             <button type="button" id="run-plan-execute" class="button button-primary">Run Plan</button>
+            <button type="button" id="run-plan-edit" class="button">Edit Plan</button>
             <span class="spinner"></span>
         </div>
         <div id="run-plan-status" class="wgetta-status"></div>
     </div>
 
-    <div class="wgetta-card">
+    <div class="wgetta-card" id="run-plan-preview-card" style="display:none;">
+        <h2>Preview</h2>
+        <div style="margin:10px 0;">
+            <input type="text" id="run-plan-tree-filter" class="regular-text" placeholder="Filter included URLs..." style="min-width:260px;" />
+        </div>
+        <div id="run-plan-tree" class="wgetta-url-list" style="max-height:280px; overflow:auto;"></div>
+    </div>
+
+    <div class="wgetta-card" id="run-plan-status-card" style="display:none;">
         <h2>Status</h2>
         <div id="run-plan-progress" class="wgetta-progress" style="display:none;">
             <div class="wgetta-progress-info">

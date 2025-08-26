@@ -28,8 +28,8 @@ class Wgetta_Admin {
         
         add_submenu_page(
             'wgetta-plan-copy',
-            'Plan',
-            'Plan',
+            'Create Plan',
+            'Create Plan',
             'manage_options',
             'wgetta-plan-copy',
             array($this, 'display_plan_copy_page')
@@ -110,8 +110,8 @@ class Wgetta_Admin {
             )
         );
 
-        // Load FancyTree assets on Plan Copy page only
-        if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
+        // Load FancyTree assets on Create Plan and Run Plan pages
+        if (isset($_GET['page']) && in_array($_GET['page'], array('wgetta-plan-copy', 'wgetta-plan-run'), true)) {
             wp_enqueue_style(
                 'fancytree-css',
                 'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/skin-win8/ui.fancytree.min.css',
@@ -128,15 +128,8 @@ class Wgetta_Admin {
         }
     }
     
-    /**
-     * Display settings page
-     */
-    public function display_settings_page() {
-        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-settings.php';
-    }
-    
-    // Legacy plan page removed
-    
+    // Legacy settings/plan pages removed
+
     public function display_plan_copy_page() {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-plan-copy.php';
     }
@@ -232,7 +225,7 @@ class Wgetta_Admin {
             $default_branch = isset($proj['default_branch']) ? $proj['default_branch'] : 'main';
             if ($http_repo === '') { throw new RuntimeException('Project repo URL missing'); }
 
-            // Build credentialed remote URL (mask token in logs later)
+            // Build credentialed remote URL (legacy working behavior)
             $parts = wp_parse_url($http_repo);
             if (!$parts || !isset($parts['scheme']) || !isset($parts['host'])) { throw new RuntimeException('Invalid repo URL'); }
             $cred = 'oauth2:' . rawurlencode($token) . '@';
@@ -247,10 +240,20 @@ class Wgetta_Admin {
             $log = array();
             $mask = $token;
 
-            // Clone shallow
+            // Clone shallow (legacy behavior)
             $res1 = $this->run_cmd(array('git', 'clone', '--depth', '1', $remote, $repo_dir));
             $log[] = $res1['out'];
-            if ($res1['code'] !== 0) { throw new RuntimeException('git clone failed'); }
+            if ($res1['code'] !== 0) {
+                $msg = $res1['out'];
+                if ($mask) { $msg = str_replace($mask, '***', $msg); }
+                throw new RuntimeException('git clone failed: ' . $msg);
+            }
+
+            // Log origin URL (sanitized)
+            $remoteUrl = $this->run_cmd(array('git', '-C', $repo_dir, 'remote', 'get-url', 'origin'));
+            $ru = $remoteUrl['out'];
+            if ($mask) { $ru = str_replace($mask, '***', $ru); }
+            $log[] = 'origin: ' . $ru;
 
             // Ensure committer identity (local repo only)
             $site_host = parse_url(home_url('/'), PHP_URL_HOST);
@@ -264,11 +267,40 @@ class Wgetta_Admin {
             $log[] = $cfg1['out'];
             $log[] = $cfg2['out'];
 
-            // Decide which files to include: only crawled files by default (from manifest)
-            // Optionally include metadata if toggle is set in settings (hidden setting)
+            // No extraheader; rely on credentialed remote
+
+            // Prepare target branch BEFORE staging changes to ensure commits are based on correct tip
+            $status = null; $plan_name = '';
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
             $runner = new Wgetta_Job_Runner();
             $runner->set_job($job_id);
+            $status = $runner->get_status();
+            $plan_name = is_array($status) && !empty($status['plan_name']) ? $status['plan_name'] : '';
+            $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
+            $date_str = date('Ymd-His');
+            $replacements = array(
+                '{plan_name}' => ($plan_name ?: $job_id),
+                '{job_id}' => $job_id,
+                '{date}' => $date_str
+            );
+            $branch_name = strtr($template, $replacements);
+            $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
+            $branch_name = trim($branch_name, '-/');
+            if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
+            $branch = $branch_name;
+            // If remote branch exists, base local branch on it to allow FF
+            $remote_has = $this->run_cmd(array('git', '-C', $repo_dir, 'ls-remote', '--heads', 'origin', $branch));
+            if ($remote_has['code'] === 0 && trim($remote_has['out']) !== '') {
+                // Fetch the remote branch tip (shallow) then base local branch on it
+                $fetch = $this->run_cmd(array('git', '-C', $repo_dir, 'fetch', '--depth', '1', 'origin', $branch . ':refs/remotes/origin/' . $branch));
+                $log[] = $fetch['out'];
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch, 'origin/' . $branch));
+            } else {
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
+            }
+
+            // Decide which files to include: only crawled files by default (from manifest)
+            // Optionally include metadata if toggle is set in settings (hidden setting)
             $manifest_files = $runner->generate_manifest();
             // Exclude known archives
             $manifest_files = array_values(array_filter($manifest_files, function($rel){
@@ -295,33 +327,18 @@ class Wgetta_Admin {
             $res2 = $this->run_cmd(array('git', '-C', $repo_dir, 'add', '-A'));
             $log[] = $res2['out'];
             // Commit; if nothing to commit, this exits non-zero; detect message
-            // Determine branch name from plan_name if present
-            $status = $runner->get_status();
-            $plan_name = is_array($status) && !empty($status['plan_name']) ? $status['plan_name'] : '';
-            $branch_slug = $plan_name ? sanitize_title($plan_name) : $job_id;
             $message = 'Wgetta deploy ' . ($plan_name ?: $job_id) . ' on ' . date('c');
             $res3 = $this->run_cmd(array('git', '-C', $repo_dir, 'commit', '-m', $message, '--author=Wp Wgetta <noreply@example.com>'));
             $log[] = $res3['out'];
             $nothingToCommit = (strpos($res3['out'], 'nothing to commit') !== false);
-
-            // Create/force branch using template from settings
-            $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
-            $date_str = date('Ymd-His');
-            $replacements = array(
-                '{plan_name}' => ($plan_name ?: $job_id),
-                '{job_id}' => $job_id,
-                '{date}' => $date_str
-            );
-            $branch_name = strtr($template, $replacements);
-            // sanitize to a safe git ref (basic)
-            $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
-            $branch_name = trim($branch_name, '-/');
-            if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
-            $branch = $branch_name;
-            $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
-            $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', 'origin', $branch));
+            // Push current HEAD explicitly to remote branch ref to avoid local refspec issues
+            $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', '-u', 'origin', 'HEAD:refs/heads/' . $branch));
             $log[] = $res4['out'];
-            if ($res4['code'] !== 0) { throw new RuntimeException('git push failed'); }
+            if ($res4['code'] !== 0) {
+                $msg = $res4['out'];
+                if ($mask) { $msg = str_replace($mask, '***', $msg); }
+                throw new RuntimeException('git push failed: ' . $msg);
+            }
 
             // Clean up
             $this->rrmdir($repo_dir);
@@ -355,23 +372,7 @@ class Wgetta_Admin {
         return array('code' => $code, 'out' => trim($stdout . (strlen($stderr) ? "\n" . $stderr : '')));
     }
 
-    private function rrcopy($src, $dst) {
-        $src = rtrim($src, DIRECTORY_SEPARATOR);
-        $dst = rtrim($dst, DIRECTORY_SEPARATOR);
-        if (!is_dir($src)) { return; }
-        $items = scandir($src);
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') { continue; }
-            $from = $src . DIRECTORY_SEPARATOR . $item;
-            $to = $dst . DIRECTORY_SEPARATOR . $item;
-            if (is_dir($from)) {
-                if (!is_dir($to)) { wp_mkdir_p($to); }
-                $this->rrcopy($from, $to);
-            } else {
-                copy($from, $to);
-            }
-        }
-    }
+    
 
     /** Test GitLab connection */
     public function ajax_git_test() {
@@ -493,49 +494,44 @@ class Wgetta_Admin {
         wp_send_json($response);
     }
     
-    /**
-     * AJAX handler for enqueueing dry run
-     */
+    /** Dry run via PHP crawler */
     public function ajax_dry_run() {
         check_ajax_referer('wgetta_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-        
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
         $response = array('success' => false, 'message' => '', 'job_id' => '');
-        
         try {
-            // Get saved command
             $cmd = get_option('wgetta_cmd', '');
-            if (empty($cmd)) {
-                throw new RuntimeException('No command configured');
-            }
-            
-            // Prepare argv
+            if ($cmd === '') { throw new RuntimeException('No command configured'); }
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
             $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
-            
-            // Make dry-run argv
-            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv($argv);
-            
-            // Create and run job
+            $seeds = array(); foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
+                }
+            }
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
+            $hosts = array(); foreach ($seeds as $s) { $h = parse_url($s, PHP_URL_HOST); if ($h) $hosts[] = $h; }
+            $hosts = array_values(array_unique($hosts));
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('dry-run');
-            $runner->run($argv);
-            
-            // Extract URLs
-            $urls = $runner->extract_urls();
-            
-            $response['success'] = true;
-            $response['job_id'] = $job_id;
-            $response['message'] = 'Dry run completed';
-            $response['data'] = array('urls' => $urls);
-            
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-crawler.php';
+            $crawler = new Wgetta_Crawler();
+            // Increase depth to better approximate wget --spider discovery
+            $urls = $crawler->discover($seeds, $hosts, 3, 5000, $log_file);
+            file_put_contents($job_dir . '/urls.json', json_encode($urls, JSON_PRETTY_PRINT));
+            $response['success'] = true; $response['job_id'] = $job_id; $response['message'] = 'Dry run completed'; $response['data'] = array('urls' => $urls);
         } catch (Exception $e) {
             $response['message'] = 'Dry run failed: ' . $e->getMessage();
         }
-        
         wp_send_json($response);
     }
     
@@ -618,11 +614,33 @@ class Wgetta_Admin {
             $cmd = get_option('wgetta_cmd', '');
             if (empty($cmd)) { throw new RuntimeException('No command configured'); }
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv(Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd));
+            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            $seeds = array();
+            foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
+                }
+            }
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
+            $hosts = array(); foreach ($seeds as $s) { $h = parse_url($s, PHP_URL_HOST); if ($h) { $hosts[] = $h; } }
+            $hosts = array_values(array_unique($hosts));
+
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('plan');
-            $runner->run($argv);
-            $urls = $runner->extract_urls();
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-crawler.php';
+            $crawler = new Wgetta_Crawler();
+            $urls = $crawler->discover($seeds, $hosts, 1, 2000, $log_file);
+
             // Apply saved patterns (server-side OR semantics)
             $patterns = get_option('wgetta_regex_patterns', array());
             if (is_array($patterns)) { $patterns = array_map('trim', $patterns); }
@@ -634,9 +652,8 @@ class Wgetta_Admin {
                 }
                 if (!$match) { $filtered[] = $u; }
             }
+
             // Save plan.csv
-            $upload_dir = wp_upload_dir();
-            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
             file_put_contents($job_dir . '/plan.csv', implode("\n", $filtered));
             $resp['success'] = true; $resp['job_id'] = $job_id; $resp['urls'] = $filtered;
         } catch (Exception $e) {
@@ -755,6 +772,31 @@ class Wgetta_Admin {
             if (!file_exists($plan_file)) { throw new RuntimeException('Plan not found'); }
             $urls = array_filter(array_map('trim', explode("\n", file_get_contents($plan_file))));
             $resp['success'] = true; $resp['urls'] = $urls; $resp['name'] = $name;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
+    /** Delete a named plan */
+    public function ajax_plan_delete() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $name = isset($_POST['name']) ? sanitize_file_name($_POST['name']) : '';
+        $resp = array('success' => false);
+        try {
+            if ($name === '') { throw new RuntimeException('Missing plan name'); }
+            $upload_dir = wp_upload_dir();
+            $plan_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/plans';
+            $plan_file = $plan_dir . '/' . $name . '.csv';
+            if (!file_exists($plan_file)) { throw new RuntimeException('Plan not found'); }
+            if (!is_dir($plan_dir)) { throw new RuntimeException('Plans directory missing'); }
+            // Ensure we only delete within the plans directory
+            $real_dir = realpath($plan_dir);
+            $real_file = realpath($plan_file);
+            if ($real_dir === false || $real_file === false || strpos($real_file, $real_dir) !== 0) { throw new RuntimeException('Invalid path'); }
+            if (!@unlink($real_file)) { throw new RuntimeException('Failed to delete plan'); }
+            $resp['success'] = true;
         } catch (Exception $e) {
             $resp['message'] = $e->getMessage();
         }
