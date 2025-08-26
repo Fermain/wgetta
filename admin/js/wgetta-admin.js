@@ -193,8 +193,14 @@
                 name: name,
                 urls: urls
             }, function(resp) {
-                showNotice(resp && resp.success ? 'success' : 'error', resp && resp.message ? resp.message : 'Save failed');
-                loadNamedPlans();
+                if (resp && resp.success) {
+                    var runUrl = (typeof wgetta_ajax !== 'undefined' && wgetta_ajax.ajax_url)
+                        ? wgetta_ajax.ajax_url.replace('admin-ajax.php', 'admin.php?page=wgetta-plan-run')
+                        : 'admin.php?page=wgetta-plan-run';
+                    window.location.href = runUrl;
+                } else {
+                    showNotice('error', (resp && resp.message) ? resp.message : 'Save failed');
+                }
             });
         });
 
