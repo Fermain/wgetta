@@ -163,6 +163,7 @@
                     currentPlan = resp.urls || [];
                     buildTreeAndList(currentPlan);
                     $status.text('Plan generated');
+                    try { document.getElementById('step-review').open = true; } catch(e){}
                 } else {
                     $status.text(resp && resp.message ? resp.message : 'Failed to generate plan');
                 }
