@@ -28,8 +28,8 @@ class Wgetta_Admin {
         
         add_submenu_page(
             'wgetta-plan-copy',
-            'Plan',
-            'Plan',
+            'Create Plan',
+            'Create Plan',
             'manage_options',
             'wgetta-plan-copy',
             array($this, 'display_plan_copy_page')

@@ -6,7 +6,7 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
 ?>
 
 <div class="wrap">
-    <h1>Plan Copy - Execute from Planned List</h1>
+    <h1>Create Plan</h1>
 
     <div class="wgetta-copy-container">
         <div class="wgetta-card">
@@ -41,47 +41,7 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
             </details>
         </div>
 
-        <div class="wgetta-card">
-            <details id="step-execute">
-                <summary><h2>3) Execute Plan</h2></summary>
-                <button type="button" id="execute-plan" class="button button-primary">Execute Planned URLs</button>
-                <span class="spinner"></span>
-                <span id="plan-exec-status" class="wgetta-status"></span>
-                
-                <div id="plan-execution-progress" class="wgetta-progress" style="display:none; margin-top:15px;">
-                    <div class="wgetta-progress-info">
-                        <span id="plan-progress-status">Queued…</span>
-                    </div>
-                    <div class="wgetta-output-console" id="plan-output-console" style="margin-top:10px;"></div>
-                </div>
-
-                <div id="plan-execution-results" class="wgetta-results" style="display:none; margin-top:15px;">
-                    <h3>Execution Complete</h3>
-                    <div class="wgetta-stats">
-                        <div class="stat-box">
-                            <span class="stat-label">Plan:</span>
-                            <span class="stat-value" id="plan-name-summary">(unsaved)</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Files Downloaded:</span>
-                            <span class="stat-value" id="plan-files-downloaded">0</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Total Size:</span>
-                            <span class="stat-value" id="plan-total-size">0 MB</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-label">Time Elapsed:</span>
-                            <span class="stat-value" id="plan-time-elapsed">0s</span>
-                        </div>
-                    </div>
-                    <div class="wgetta-download-location">
-                        <h4>Download Location:</h4>
-                        <code id="plan-download-path"></code>
-                    </div>
-                </div>
-            </details>
-        </div>
+        
 
         
     </div>

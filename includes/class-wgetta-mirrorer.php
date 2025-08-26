@@ -29,6 +29,8 @@ class Wgetta_Mirrorer {
 
         while (!empty($queue) && count($saved) < $this->max_pages) {
             list($url, $depth, $kind) = array_shift($queue);
+            // Respect max depth for page navigation regardless of source (HTML links, JSON, headers)
+            if ($kind === 'page' && $depth > $max_depth) { continue; }
             if ($reject !== '' && $this->matches_reject($reject, $url)) { $this->log($log_file, 'REJECT ' . $url); continue; }
             if (!$this->is_allowed_host($allowed_hosts, $url)) { continue; }
 
@@ -81,8 +83,10 @@ class Wgetta_Mirrorer {
                 } else if ($this->is_json($ct)) {
                     foreach ($this->extract_json_urls($body) as $u) {
                         if (!isset($seen[$u]) && $this->is_allowed_host($allowed_hosts, $u) && ($reject === '' || !$this->matches_reject($reject, $u))) {
-                            $queue[] = array($u, $depth + 1, 'page');
-                            $seen[$u] = true;
+                            if ($depth < $max_depth) {
+                                $queue[] = array($u, $depth + 1, 'page');
+                                $seen[$u] = true;
+                            }
                         }
                     }
                 }
@@ -142,14 +146,17 @@ class Wgetta_Mirrorer {
                 } else {
                     $abs = $this->to_absolute($base_url, $val);
                     if (!$abs) { continue; }
-                    $assets[] = $abs;
-                    $mapped = $this->map_url_to_path($abs, null);
+                    // Only treat certain link rel types as assets; ignore pingback, edituri, alternate, etc.
                     if ($p[0] === 'link') {
                         $rel = strtolower($el->getAttribute('rel'));
                         if ($rel === 'stylesheet' || $rel === 'preload' || $rel === 'icon') {
+                            $assets[] = $abs;
+                            $mapped = $this->map_url_to_path($abs, null);
                             $el->setAttribute('href', $this->to_root_relative($mapped));
                         }
                     } else {
+                        $assets[] = $abs;
+                        $mapped = $this->map_url_to_path($abs, null);
                         $el->setAttribute($p[1], $this->to_root_relative($mapped));
                     }
                 }
