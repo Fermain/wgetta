@@ -448,7 +448,8 @@
         $('#run-plan-select').on('change', function(){
             var name = $(this).val();
             $('#run-plan-tree').empty();
-            if (!name) return;
+            if (!name) { $('#run-plan-preview-card').hide(); $('#run-plan-status-card').hide(); return; }
+            $('#run-plan-preview-card').show(); $('#run-plan-status-card').show();
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_load', nonce: $('#wgetta_nonce').val(), name: name }, function(resp){
                 if (resp && resp.success && Array.isArray(resp.urls)) {
                     var urls = resp.urls.filter(function(u){ return typeof u === 'string' && u.indexOf(' #SKIP') === -1; });

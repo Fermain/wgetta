@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) { exit; }
         <div id="run-plan-status" class="wgetta-status"></div>
     </div>
 
-    <div class="wgetta-card">
+    <div class="wgetta-card" id="run-plan-preview-card" style="display:none;">
         <h2>Preview</h2>
         <div style="margin:10px 0;">
             <input type="text" id="run-plan-tree-filter" class="regular-text" placeholder="Filter included URLs..." style="min-width:260px;" />
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) { exit; }
         <div id="run-plan-tree" class="wgetta-url-list" style="max-height:280px; overflow:auto;"></div>
     </div>
 
-    <div class="wgetta-card">
+    <div class="wgetta-card" id="run-plan-status-card" style="display:none;">
         <h2>Status</h2>
         <div id="run-plan-progress" class="wgetta-progress" style="display:none;">
             <div class="wgetta-progress-info">
