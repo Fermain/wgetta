@@ -149,7 +149,7 @@
         
         $('#generate-plan').on('click', function() {
             var $btn = $(this), $spin = $btn.siblings('.spinner'), $status = $('#plan-status');
-            $btn.prop('disabled', true); $spin.addClass('is-active'); $status.text('Generating plan...');
+            $btn.prop('disabled', true); $spin.addClass('is-active');
             // Save command before generating
             var cmd = $('#wget-command').val();
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_save_settings', nonce: wgetta_ajax.nonce, wgetta_cmd: cmd }, function(){
