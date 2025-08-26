@@ -254,6 +254,8 @@ class Wgetta_Mirrorer {
         $parts = wp_parse_url($url);
         $host = isset($parts['host']) ? strtolower($parts['host']) : 'host';
         $path = isset($parts['path']) ? $parts['path'] : '/';
+        // Canonicalize root: treat '/' and '' as same; strip trailing slashes except for root
+        if ($path !== '/') { $path = rtrim($path, '/'); if ($path === '') { $path = '/'; } }
         $query = isset($parts['query']) ? $parts['query'] : '';
         $path = '/' . ltrim($path, '/');
         $leaf = basename($path);

@@ -514,6 +514,8 @@ class Wgetta_Job_Runner {
         
         // Parse output
         $files = array_filter(explode("\n", $output));
+        // Normalize duplicate root entries: './' and '.' to ''
+        $files = array_map(function($file){ return $file === './' ? '.' : $file; }, $files);
         $files = array_map(function($file) {
             // Remove leading ./
             return ltrim($file, './');

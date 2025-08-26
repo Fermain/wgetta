@@ -260,6 +260,7 @@
             // Build FancyTree data: one node per host, children per path segment as folders, with leaves per URL
             var hosts = {};
             var skipSet = {};
+            var added = {};
             urls.forEach(function(u){
                 try {
                     var raw = u;
@@ -269,6 +270,11 @@
                         skipSet[raw] = true;
                     }
                     var a = document.createElement('a'); a.href = raw;
+                    // canonical key: normalize root path to '/'
+                    var path = a.pathname || '/';
+                    if (path !== '/' ) { path = path.replace(/\/+$/,''); }
+                    var canon = (a.protocol || 'http:') + '//' + (a.host || '') + path + (a.search || '');
+                    if (added[canon]) { return; }
                     var host = a.host || 'root';
                     var parts = (a.pathname || '/').split('/').filter(Boolean);
                     hosts[host] = hosts[host] || { title: host, folder: true, expanded: true, children: [] };
@@ -286,7 +292,8 @@
                     }
                     // attach leaf node representing the URL
                     var leafTitle = a.pathname.replace(/\/$/, '') || a.pathname;
-                    branch.children.push({ title: leafTitle, checkbox: true, data: { url: raw } });
+                    branch.children.push({ title: leafTitle, checkbox: true, data: { url: canon } });
+                    added[canon] = true;
                 } catch(e){}
             });
             var source = Object.keys(hosts).map(function(h){ return hosts[h]; });
