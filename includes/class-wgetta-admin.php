@@ -184,8 +184,25 @@ class Wgetta_Admin {
             }
         }
 
-        // Load FancyTree assets on Plan Copy page only
+        // Load FancyTree assets on Plan Copy page
         if (isset($_GET['page']) && $_GET['page'] === 'wgetta-plan-copy') {
+            wp_enqueue_style(
+                'fancytree-css',
+                'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/skin-win8/ui.fancytree.min.css',
+                array(),
+                '2'
+            );
+            wp_enqueue_script(
+                'fancytree-js',
+                'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/jquery.fancytree-all-deps.min.js',
+                array('jquery'),
+                '2',
+                true
+            );
+        }
+
+        // Also load FancyTree on the SPA page for the Manual step
+        if (isset($_GET['page']) && $_GET['page'] === 'wgetta-app') {
             wp_enqueue_style(
                 'fancytree-css',
                 'https://cdn.jsdelivr.net/npm/jquery.fancytree@2/dist/skin-win8/ui.fancytree.min.css',

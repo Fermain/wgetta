@@ -46,6 +46,42 @@
           if (tok === name && tokens[idx+1]) return tokens[idx+1]
           return undefined
         }
+        const splitAlternation = (expr: string): string[] => {
+          // Helper to check if entire string is wrapped by a single pair of parentheses
+          const isFullyWrapped = (s: string) => {
+            if (!(s.startsWith('(') && s.endsWith(')'))) return false
+            let d = 0
+            for (let i = 0; i < s.length; i++) {
+              const c = s[i]
+              if (c === '\\') { i++; continue }
+              if (c === '(') d++
+              else if (c === ')') d--
+              if (d === 0 && i < s.length - 1) return false
+            }
+            return true
+          }
+          // Unwrap outer parens repeatedly
+          let src = expr.trim()
+          while (isFullyWrapped(src)) src = src.slice(1, -1)
+          const parts: string[] = []
+          let buf = ''
+          let depthParen = 0
+          let depthBracket = 0
+          let esc2 = false
+          for (let i = 0; i < src.length; i++) {
+            const ch = src[i]
+            if (esc2) { buf += ch; esc2 = false; continue }
+            if (ch === '\\') { buf += ch; esc2 = true; continue }
+            if (ch === '[') { depthBracket++; buf += ch; continue }
+            if (ch === ']' && depthBracket > 0) { depthBracket--; buf += ch; continue }
+            if (ch === '(' && depthBracket === 0) { depthParen++; buf += ch; continue }
+            if (ch === ')' && depthBracket === 0 && depthParen > 0) { depthParen--; buf += ch; continue }
+            if (ch === '|' && depthParen === 0 && depthBracket === 0) { parts.push(buf.trim()); buf = ''; continue }
+            buf += ch
+          }
+          if (buf) parts.push(buf.trim())
+          return parts.filter(Boolean)
+        }
         const rejects: string[] = []
         const accepts: string[] = []
         let domainsVal: string | undefined
@@ -53,10 +89,20 @@
           const t = tokens[i]
           if (t === '--reject-regex' || t.startsWith('--reject-regex=')) {
             const v = getOptVal('--reject-regex', i)
-            if (v) rejects.push(stripQuotes(v))
+            if (v) {
+              const val = stripQuotes(v)
+              const items = splitAlternation(val)
+              if (items.length > 1) rejects.push(...items)
+              else rejects.push(val)
+            }
           } else if (t === '--accept-regex' || t.startsWith('--accept-regex=')) {
             const v = getOptVal('--accept-regex', i)
-            if (v) accepts.push(stripQuotes(v))
+            if (v) {
+              const val = stripQuotes(v)
+              const items = splitAlternation(val)
+              if (items.length > 1) accepts.push(...items)
+              else accepts.push(val)
+            }
           } else if (t === '--domains' || t.startsWith('--domains=')) {
             const v = getOptVal('--domains', i)
             if (v) domainsVal = stripQuotes(v)
@@ -79,6 +125,11 @@
         try {
           sessionStorage.setItem('wgetta.urls', JSON.stringify(summary.samples))
           if (data.job_id) sessionStorage.setItem('wgetta.job_id', String(data.job_id))
+          if (data.parsed) {
+            if (Array.isArray(data.parsed.reject_regex)) sessionStorage.setItem('wgetta.rules.reject', JSON.stringify(data.parsed.reject_regex))
+            if (Array.isArray(data.parsed.accept_regex)) sessionStorage.setItem('wgetta.rules.accept', JSON.stringify(data.parsed.accept_regex))
+            if (Array.isArray(data.parsed.domains)) sessionStorage.setItem('wgetta.domains', JSON.stringify(data.parsed.domains))
+          }
         } catch {}
         infoMsg = `Found ${summary.total} URL${summary.total === 1 ? '' : 's'}.`
       } else {

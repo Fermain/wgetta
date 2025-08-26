@@ -79,6 +79,22 @@ class Wgetta {
                 'job_id' => array('type' => 'string', 'required' => false),
             )
         ));
+        register_rest_route('wgetta/v1', '/jobs/urls', array(
+            'methods' => 'GET',
+            'permission_callback' => function () { return current_user_can('manage_options'); },
+            'callback' => array($this, 'rest_job_urls'),
+            'args' => array(
+                'job_id' => array('type' => 'string', 'required' => true)
+            )
+        ));
+        register_rest_route('wgetta/v1', '/jobs/tree', array(
+            'methods' => 'GET',
+            'permission_callback' => function () { return current_user_can('manage_options'); },
+            'callback' => array($this, 'rest_job_tree'),
+            'args' => array(
+                'job_id' => array('type' => 'string', 'required' => true)
+            )
+        ));
     }
 
     /** REST: analyze discover command (dry run with --spider) */
@@ -100,6 +116,7 @@ class Wgetta {
                 $cmd .= ' --domains=' . $host;
             }
             $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            $parsed = $this->parse_command_options($argv);
             // Create and run job
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('dry-run');
@@ -112,10 +129,150 @@ class Wgetta {
                 'job_id' => $job_id,
                 'total' => $total,
                 'samples' => $samples,
+                'parsed' => $parsed,
             ));
         } catch (Exception $e) {
             return new WP_REST_Response(array('success' => false, 'message' => $e->getMessage()), 500);
         }
+    }
+
+    private function parse_command_options($argv) {
+        $domains = array();
+        $rejects = array();
+        $accepts = array();
+        for ($i = 1; $i < count($argv); $i++) {
+            $tok = $argv[$i];
+            if (strpos($tok, '--domains=') === 0) {
+                $val = substr($tok, 10);
+                foreach (explode(',', $val) as $d) { $d = trim($d); if ($d !== '') { $domains[] = $d; } }
+            } elseif ($tok === '--domains' && isset($argv[$i+1])) {
+                foreach (explode(',', $argv[$i+1]) as $d) { $d = trim($d); if ($d !== '') { $domains[] = $d; } }
+                $i++;
+            } elseif (strpos($tok, '--reject-regex=') === 0) {
+                $val = substr($tok, 15);
+                $rejects = array_merge($rejects, $this->split_regex_alternation($val));
+            } elseif ($tok === '--reject-regex' && isset($argv[$i+1])) {
+                $rejects = array_merge($rejects, $this->split_regex_alternation($argv[$i+1]));
+                $i++;
+            } elseif (strpos($tok, '--accept-regex=') === 0) {
+                $val = substr($tok, 15);
+                $accepts = array_merge($accepts, $this->split_regex_alternation($val));
+            } elseif ($tok === '--accept-regex' && isset($argv[$i+1])) {
+                $accepts = array_merge($accepts, $this->split_regex_alternation($argv[$i+1]));
+                $i++;
+            }
+        }
+        return array('domains' => array_values(array_unique($domains)), 'reject_regex' => array_values(array_unique($rejects)), 'accept_regex' => array_values(array_unique($accepts)));
+    }
+
+    private function split_regex_alternation($pattern) {
+        $s = trim($pattern);
+        if ($s === '') return array();
+        if ((str_starts_with($s, "'") && str_ends_with($s, "'")) || (str_starts_with($s, '"') && str_ends_with($s, '"'))) {
+            $s = substr($s, 1, -1);
+        }
+        $unwrap = function($x) {
+            if (!str_starts_with($x, '(') || !str_ends_with($x, ')')) return $x;
+            $d = 0; $n = strlen($x);
+            for ($i=0; $i<$n; $i++) {
+                $c = $x[$i];
+                if ($c === '\\') { $i++; continue; }
+                if ($c === '(') $d++; elseif ($c === ')') $d--;
+                if ($d === 0 && $i < $n-1) return $x;
+            }
+            return substr($x, 1, -1);
+        };
+        while (strlen($s) && $unwrap($s) !== $s) { $s = $unwrap($s); }
+        $parts = array();
+        $buf = '';
+        $depthParen = 0; $depthBracket = 0; $esc = false; $n = strlen($s);
+        for ($i=0; $i<$n; $i++) {
+            $ch = $s[$i];
+            if ($esc) { $buf .= $ch; $esc = false; continue; }
+            if ($ch === '\\') { $buf .= $ch; $esc = true; continue; }
+            if ($ch === '[') { $depthBracket++; $buf .= $ch; continue; }
+            if ($ch === ']' && $depthBracket>0) { $depthBracket--; $buf .= $ch; continue; }
+            if ($ch === '(' && $depthBracket===0) { $depthParen++; $buf .= $ch; continue; }
+            if ($ch === ')' && $depthBracket===0 && $depthParen>0) { $depthParen--; $buf .= $ch; continue; }
+            if ($ch === '|' && $depthParen===0 && $depthBracket===0) { $parts[] = trim($buf); $buf = ''; continue; }
+            $buf .= $ch;
+        }
+        if ($buf !== '') $parts[] = trim($buf);
+        $parts = array_filter($parts, function($x){ return $x !== ''; });
+        if (empty($parts)) return array($s);
+        return array_values($parts);
+    }
+
+    /** REST: return extracted URLs for a job */
+    public function rest_job_urls( WP_REST_Request $request ) {
+        $job_id = (string) $request->get_param('job_id');
+        $job_id = trim($job_id);
+        if ($job_id === '' || strpos($job_id, 'job_') !== 0) {
+            return new WP_REST_Response(array('success' => false, 'message' => 'Invalid job_id'), 400);
+        }
+        $upload_dir = wp_upload_dir();
+        $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . basename($job_id);
+        $file = $job_dir . '/urls.json';
+        if (!file_exists($file)) {
+            return new WP_REST_Response(array('success' => true, 'urls' => array()));
+        }
+        $urls = json_decode(file_get_contents($file), true);
+        if (!is_array($urls)) { $urls = array(); }
+        return new WP_REST_Response(array('success' => true, 'urls' => array_values($urls)));
+    }
+
+    /** REST: return grouped URL tree for a job */
+    public function rest_job_tree( WP_REST_Request $request ) {
+        $job_id = (string) $request->get_param('job_id');
+        $job_id = trim($job_id);
+        if ($job_id === '' || strpos($job_id, 'job_') !== 0) {
+            return new WP_REST_Response(array('success' => false, 'message' => 'Invalid job_id'), 400);
+        }
+        $upload_dir = wp_upload_dir();
+        $job_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/jobs/' . basename($job_id);
+        $file = $job_dir . '/urls.json';
+        $urls = array();
+        if (file_exists($file)) {
+            $decoded = json_decode(file_get_contents($file), true);
+            if (is_array($decoded)) { $urls = $decoded; }
+        }
+        // Group by host and path segments
+        $root = array();
+        $hostMap = array();
+        foreach ($urls as $url) {
+            if (!is_string($url) || $url === '') { continue; }
+            $parts = wp_parse_url($url);
+            if (!$parts || empty($parts['host'])) { continue; }
+            $host = $parts['scheme'] . '://' . $parts['host'];
+            if (!isset($hostMap[$host])) {
+                $node = array('id' => $host, 'title' => $host, 'children' => array(), 'leaf' => false, 'expanded' => true);
+                $hostMap[$host] = &$node;
+                $root[] = &$node;
+                unset($node);
+            }
+            $path = isset($parts['path']) ? trim($parts['path'], '/') : '';
+            $segments = $path === '' ? array() : explode('/', $path);
+            $cursor =& $hostMap[$host]['children'];
+            $accum = $host;
+            foreach ($segments as $i => $seg) {
+                $accum .= '/' . $seg;
+                $key = $accum;
+                $foundIndex = -1;
+                for ($j=0;$j<count($cursor);$j++) { if ($cursor[$j]['id'] === $key) { $foundIndex = $j; break; } }
+                if ($foundIndex === -1) {
+                    $isLeaf = ($i === count($segments) - 1);
+                    $new = array('id' => $key, 'title' => $seg . ($isLeaf ? '' : '/'), 'children' => array(), 'leaf' => $isLeaf);
+                    $cursor[] = $new;
+                    $foundIndex = count($cursor) - 1;
+                }
+                if (!empty($cursor[$foundIndex]['leaf'])) {
+                    // already a leaf; nothing deeper
+                } else {
+                    $cursor =& $cursor[$foundIndex]['children'];
+                }
+            }
+        }
+        return new WP_REST_Response(array('success' => true, 'tree' => $root));
     }
 
     /** REST: simulate a single regex pattern against a set of URLs */
