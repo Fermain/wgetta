@@ -6,7 +6,6 @@ if (!defined('ABSPATH')) { exit; }
     <h1>Run Plan</h1>
 
     <div class="wgetta-card">
-        <p>Select a previously saved plan and run it. This will execute the plan as-is.</p>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <select id="run-plan-select" class="regular-text" style="min-width:260px;"></select>
             <button type="button" id="run-plan-execute" class="button button-primary">Run Plan</button>

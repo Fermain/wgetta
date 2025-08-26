@@ -11,7 +11,7 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
     <div class="wgetta-copy-container">
         <div class="wgetta-card">
             <details id="step-command" open>
-                <summary><h2>Create Index</h2></summary>
+                <summary><h2>Create Plan</h2></summary>
                 <p>Enter your base <code>wget</code> command. Discovery will run with <code>--spider</code>.</p>
                 <textarea id="wget-command" name="wgetta_cmd" rows="4" class="large-text code" placeholder="wget -nv --recursive http://example.com/"><?php echo esc_textarea($wgetta_cmd); ?></textarea>
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
