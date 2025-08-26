@@ -43,6 +43,7 @@ class Wgetta {
         add_action('wp_ajax_wgetta_plan_load', array($this->admin, 'ajax_plan_load'));
         add_action('wp_ajax_wgetta_plan_save_named', array($this->admin, 'ajax_plan_save_named'));
         add_action('wp_ajax_wgetta_plan_create', array($this->admin, 'ajax_plan_create'));
+        add_action('wp_ajax_wgetta_plan_delete', array($this->admin, 'ajax_plan_delete'));
         add_action('wp_ajax_wgetta_git_save', array($this->admin, 'ajax_git_save'));
         add_action('wp_ajax_wgetta_git_deploy_dry', array($this->admin, 'ajax_git_deploy_dry'));
         add_action('wp_ajax_wgetta_git_deploy_push', array($this->admin, 'ajax_git_deploy_push'));

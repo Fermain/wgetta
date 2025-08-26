@@ -17,7 +17,7 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
                     <button type="button" id="generate-plan" class="button button-primary">Generate New Plan</button>
                     <select id="load-plan-select" class="regular-text" style="min-width:240px;"></select>
-                    <button type="button" id="load-plan" class="button">Load Existing Plan</button>
+                    <button type="button" id="delete-plan" class="button" style="display:none;">Delete Plan</button>
                     <span class="spinner"></span>
                 </div>
                 <div id="plan-status" class="wgetta-status"></div>
@@ -83,12 +83,7 @@ $wgetta_cmd = get_option('wgetta_cmd', '');
             </details>
         </div>
 
-        <div class="wgetta-card wgetta-history-section">
-            <details id="step-history">
-                <summary><h2>Recent Executions</h2></summary>
-                <div id="plan-execution-history" class="wgetta-history"><p>No previous executions found.</p></div>
-            </details>
-        </div>
+        
     </div>
 
     <?php wp_nonce_field('wgetta_ajax_nonce', 'wgetta_nonce'); ?>

@@ -754,6 +754,31 @@ class Wgetta_Admin {
         wp_send_json($resp);
     }
 
+    /** Delete a named plan */
+    public function ajax_plan_delete() {
+        check_ajax_referer('wgetta_ajax_nonce', 'nonce');
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
+        $name = isset($_POST['name']) ? sanitize_file_name($_POST['name']) : '';
+        $resp = array('success' => false);
+        try {
+            if ($name === '') { throw new RuntimeException('Missing plan name'); }
+            $upload_dir = wp_upload_dir();
+            $plan_dir = trailingslashit($upload_dir['basedir']) . 'wgetta/plans';
+            $plan_file = $plan_dir . '/' . $name . '.csv';
+            if (!file_exists($plan_file)) { throw new RuntimeException('Plan not found'); }
+            if (!is_dir($plan_dir)) { throw new RuntimeException('Plans directory missing'); }
+            // Ensure we only delete within the plans directory
+            $real_dir = realpath($plan_dir);
+            $real_file = realpath($plan_file);
+            if ($real_dir === false || $real_file === false || strpos($real_file, $real_dir) !== 0) { throw new RuntimeException('Invalid path'); }
+            if (!@unlink($real_file)) { throw new RuntimeException('Failed to delete plan'); }
+            $resp['success'] = true;
+        } catch (Exception $e) {
+            $resp['message'] = $e->getMessage();
+        }
+        wp_send_json($resp);
+    }
+
     /** Save current plan under a name */
     public function ajax_plan_save_named() {
         check_ajax_referer('wgetta_ajax_nonce', 'nonce');

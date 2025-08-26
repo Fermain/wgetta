@@ -198,9 +198,9 @@
             });
         });
 
-        $('#load-plan').on('click', function() {
+        $('#load-plan-select').on('change input', function() {
             var name = $('#load-plan-select').val();
-            if (!name) return;
+            if (!name) { $('#delete-plan').hide(); return; }
             // Create a new job based on this named plan and load its URLs
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_create', nonce: $('#wgetta_nonce').val(), name: name }, function(createResp){
                 if (createResp && createResp.success) {
@@ -215,10 +215,35 @@
                             currentPlan = resp.urls || [];
                             buildTreeAndList(currentPlan);
                             try { document.getElementById('step-review').open = true; } catch(e){}
+                            $('#delete-plan').show().data('plan', name);
                         }
                     });
                 } else {
                     showNotice('error', (createResp && createResp.message) ? createResp.message : 'Failed to prepare plan');
+                }
+            });
+        });
+
+        $('#delete-plan').on('click', function(){
+            var name = $(this).data('plan');
+            if (!name) { return; }
+            if (!confirm('Delete the plan "' + name + '"? This cannot be undone.')) { return; }
+            var $btn = $(this), $spin = $('#step-command .spinner');
+            $btn.prop('disabled', true); $spin.addClass('is-active');
+            $.post(wgetta_ajax.ajax_url, {
+                action: 'wgetta_plan_delete',
+                nonce: $('#wgetta_nonce').val(),
+                name: name
+            }, function(resp){
+                $spin.removeClass('is-active'); $btn.prop('disabled', false);
+                if (resp && resp.success) {
+                    showNotice('success', 'Plan deleted');
+                    $('#delete-plan').hide().data('plan', '');
+                    // Reload list and clear tree
+                    loadNamedPlans();
+                    buildTreeAndList([]);
+                } else {
+                    showNotice('error', (resp && resp.message) ? resp.message : 'Failed to delete plan');
                 }
             });
         });
@@ -296,23 +321,7 @@
                                         $('#plan-download-path').after(' — <a href="' + response.summary.zip_url + '" target="_blank">Download ZIP</a>');
                                     }
                                 }
-                                // History (render as WP table)
-                                if (Array.isArray(response.history)) {
-                                    var html = '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Job</th><th>Status</th><th>Files</th><th>Path</th><th>Archive</th></tr></thead><tbody>';
-                                    for (var i = 0; i < response.history.length; i++) {
-                                        var h = response.history[i];
-                                        html += '<tr>' +
-                                            '<td><code>' + (h.id || '') + '</code></td>' +
-                                            '<td>' + (h.status || 'unknown') + '</td>' +
-                                            '<td>' + (h.files || 0) + '</td>' +
-                                            '<td><code>' + escapeHtml(h.path || '') + '</code></td>' +
-                                            '<td>' + (h.zip_url ? ('<a href="' + h.zip_url + '" target="_blank">Download</a>') : '') + '</td>' +
-                                            '</tr>';
-                                    }
-                                    html += '</tbody></table>';
-                                    $('#plan-execution-history').html(html);
-                                    try { document.getElementById('step-history').open = true; } catch(e){}
-                                }
+                                // Recent Executions UI removed from this page
                             }
                         }
                     }
