@@ -329,7 +329,8 @@ class Wgetta_Admin {
             } else {
                 $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
             }
-            $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', 'origin', $branch));
+            // Push current HEAD explicitly to remote branch ref to avoid local refspec issues
+            $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', '-u', 'origin', 'HEAD:refs/heads/' . $branch));
             $log[] = $res4['out'];
             if ($res4['code'] !== 0) {
                 $msg = $res4['out'];
