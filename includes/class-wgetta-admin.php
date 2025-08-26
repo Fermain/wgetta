@@ -225,7 +225,7 @@ class Wgetta_Admin {
             $default_branch = isset($proj['default_branch']) ? $proj['default_branch'] : 'main';
             if ($http_repo === '') { throw new RuntimeException('Project repo URL missing'); }
 
-            // Build credentialed remote URL (mask token in logs later)
+            // Build credentialed remote URL (legacy working behavior)
             $parts = wp_parse_url($http_repo);
             if (!$parts || !isset($parts['scheme']) || !isset($parts['host'])) { throw new RuntimeException('Invalid repo URL'); }
             $cred = 'oauth2:' . rawurlencode($token) . '@';
@@ -240,7 +240,7 @@ class Wgetta_Admin {
             $log = array();
             $mask = $token;
 
-            // Clone shallow
+            // Clone shallow (legacy behavior)
             $res1 = $this->run_cmd(array('git', 'clone', '--depth', '1', $remote, $repo_dir));
             $log[] = $res1['out'];
             if ($res1['code'] !== 0) { throw new RuntimeException('git clone failed'); }
@@ -256,6 +256,8 @@ class Wgetta_Admin {
             $cfg2 = $this->run_cmd(array('git', '-C', $repo_dir, 'config', 'user.email', $author_email));
             $log[] = $cfg1['out'];
             $log[] = $cfg2['out'];
+
+            // No extraheader; rely on credentialed remote
 
             // Decide which files to include: only crawled files by default (from manifest)
             // Optionally include metadata if toggle is set in settings (hidden setting)
