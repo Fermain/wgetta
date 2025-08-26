@@ -184,18 +184,7 @@
             });
         });
 
-        $('#save-plan').on('click', function() {
-            var urls = collectPlan();
-            currentPlan = urls;
-            $.post(wgetta_ajax.ajax_url, {
-                action: 'wgetta_plan_save',
-                nonce: $('#wgetta_nonce').val(),
-                job_id: currentJobId,
-                urls: urls
-            }, function(resp) {
-                showNotice(resp && resp.success ? 'success' : 'error', resp && resp.message ? resp.message : 'Save failed');
-            });
-        });
+        // Removed legacy #save-plan handler (Save Plan is handled via named save)
 
         $('#save-plan-named').on('click', function() {
             var urls = collectPlan();
