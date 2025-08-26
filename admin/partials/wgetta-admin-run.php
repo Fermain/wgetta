@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) { exit; }
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <select id="run-plan-select" class="regular-text" style="min-width:260px;"></select>
             <button type="button" id="run-plan-execute" class="button button-primary">Run Plan</button>
+            <button type="button" id="run-plan-edit" class="button">Edit Plan</button>
             <span class="spinner"></span>
         </div>
         <div id="run-plan-status" class="wgetta-status"></div>

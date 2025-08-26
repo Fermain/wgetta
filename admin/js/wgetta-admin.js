@@ -146,6 +146,20 @@
     function initPlanCopyPage() {
         var currentJobId = null;
         var currentPlan = [];
+        // Preselect plan via ?plan=name
+        var pre = getParameterByName('plan');
+        if (pre) {
+            var wait = function(){
+                var $sel = $('#load-plan-select');
+                if ($sel.children('option').length > 0) {
+                    $sel.val(pre).trigger('change');
+                } else {
+                    setTimeout(wait, 200);
+                }
+            };
+            // Wait until options are loaded
+            setTimeout(wait, 0);
+        }
         
         $('#generate-plan').on('click', function() {
             var $btn = $(this), $spin = $btn.siblings('.spinner'), $status = $('#plan-status');
@@ -372,6 +386,19 @@
      */
     function initPlanRunPage() {
         loadRunPlans();
+        // Preselect plan via ?plan=name
+        var pre = getParameterByName('plan');
+        if (pre) {
+            var trySelect = function(){
+                var $sel = $('#run-plan-select');
+                if ($sel.children('option').length > 1) {
+                    $sel.val(pre).trigger('change');
+                } else {
+                    setTimeout(trySelect, 200);
+                }
+            };
+            trySelect();
+        }
 
         $('#run-plan-execute').on('click', function(){
             var name = $('#run-plan-select').val();
@@ -407,6 +434,16 @@
             });
         });
 
+        // Edit Plan -> navigate to Create Plan with preselection
+        $('#run-plan-edit').on('click', function(){
+            var name = $('#run-plan-select').val();
+            if (!name) { showNotice('error', 'Please select a plan'); return; }
+            var url = (typeof wgetta_ajax !== 'undefined' && wgetta_ajax.ajax_url)
+                ? wgetta_ajax.ajax_url.replace('admin-ajax.php', 'admin.php?page=wgetta-plan-copy&plan=' + encodeURIComponent(name))
+                : 'admin.php?page=wgetta-plan-copy&plan=' + encodeURIComponent(name);
+            window.location.href = url;
+        });
+
         function loadRunPlans() {
             $.post(wgetta_ajax.ajax_url, { action: 'wgetta_plan_list', nonce: $('#wgetta_nonce').val() }, function(resp){
                 if (resp && resp.success) {
@@ -416,7 +453,9 @@
                         var label = escapeHtml(p.name) + ' (' + (p.included || 0) + '/' + (p.total || 0) + ')';
                         opts += '<option value="' + escapeHtml(p.name) + '">' + label + '</option>';
                     }
+                    var pre = getParameterByName('plan');
                     $('#run-plan-select').html(opts);
+                    if (pre) { $('#run-plan-select').val(pre).trigger('change'); }
                 }
             });
         }
