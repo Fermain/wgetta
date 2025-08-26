@@ -19,6 +19,7 @@ class Wgetta {
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-admin.php';
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
         require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-mirrorer.php';
+        require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-crawler.php';
     }
     
     public function run() {
@@ -93,43 +94,52 @@ class Wgetta {
      */
     public function cli_dry_run($args, $assoc_args) {
         $cmd = get_option('wgetta_cmd', '');
-        
+
         if (empty($cmd)) {
-            WP_CLI::error('No wget command configured. Use the admin interface to set a command.');
+            WP_CLI::error('No base URL configured. Use the admin interface to set a command.');
         }
-        
+
         try {
-            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            
-            // Prepare argv
-            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
-            
-            // Make dry-run argv
-            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv($argv);
-            
-            WP_CLI::line('Starting dry-run with command: ' . implode(' ', $argv));
-            
-            // Create and run job
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('dry-run');
-            
             WP_CLI::line('Job ID: ' . $job_id);
-            
-            // Run the job
-            $runner->run($argv);
-            
-            // Extract URLs
-            $urls = $runner->extract_urls();
-            
-            WP_CLI::success('Dry-run completed. Found ' . count($urls) . ' URLs.');
-            
-            if (count($urls) > 0) {
-                WP_CLI::line("\nFirst 10 URLs:");
-                foreach (array_slice($urls, 0, 10) as $url) {
-                    WP_CLI::line('  - ' . $url);
+
+            // Seeds from command argv
+            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            $seeds = array();
+            foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host to traverse REST routes
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
                 }
             }
-            
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
+
+            // Allowed hosts from seeds
+            $hosts = array(); foreach ($seeds as $s) { $h = parse_url($s, PHP_URL_HOST); if ($h) $hosts[] = $h; }
+            $hosts = array_values(array_unique($hosts));
+
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+
+            $crawler = new Wgetta_Crawler();
+            $urls = $crawler->discover($seeds, $hosts, 3, 5000, $log_file);
+
+            file_put_contents($job_dir . '/urls.json', json_encode(array_values($urls), JSON_PRETTY_PRINT));
+
+            WP_CLI::success('Dry-run completed. Found ' . count($urls) . ' URLs.');
+
+            if (count($urls) > 0) {
+                WP_CLI::line("\nFirst 10 URLs:");
+                foreach (array_slice($urls, 0, 10) as $url) { WP_CLI::line('  - ' . $url); }
+            }
+
         } catch (Exception $e) {
             WP_CLI::error('Dry-run failed: ' . $e->getMessage());
         }
@@ -153,6 +163,16 @@ class Wgetta {
             $seeds = array();
             foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
             if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host to traverse REST routes
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
+                }
+            }
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
 
             // Build combined reject pattern from saved patterns
             $patterns = get_option('wgetta_regex_patterns', array());
@@ -263,43 +283,7 @@ class Wgetta {
             }
             $urls = array_filter(array_map('trim', explode("\n", file_get_contents($plan_file))));
 
-            // Prepare base argv from saved command (strip URL tokens and recursion/filter flags)
-            $cmd = get_option('wgetta_cmd', '');
-            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
-            $base = array();
-            $remove_no_value = array(
-                '--recursive','-r','--mirror','-m','--span-hosts','-H','--spider',
-                '--page-requisites','-p','--convert-links','-k','--backup-converted','-K',
-                '--delete-after'
-            );
-            $remove_with_value = array(
-                '--level','--domains','--exclude-domains','--accept','--reject',
-                '--accept-regex','--reject-regex','--input-file','-i','--adjust-extension','-E'
-            );
-            for ($i = 0; $i < count($argv); $i++) {
-                $tok = $argv[$i];
-                // Skip URLs entirely
-                if (preg_match('#^https?://#i', $tok)) { continue; }
-                // Handle long opts with =value
-                $opt_name = $tok;
-                if (strpos($tok, '=') !== false && substr($tok, 0, 2) === '--') {
-                    $opt_name = substr($tok, 0, strpos($tok, '='));
-                }
-                // Remove flags that would broaden the download beyond the explicit plan
-                if (in_array($tok, $remove_no_value, true) || in_array($opt_name, $remove_no_value, true)) { continue; }
-                if (in_array($tok, $remove_with_value, true) || in_array($opt_name, $remove_with_value, true)) {
-                    // Skip this option; also skip next token if value provided as separate arg and no '=' was used
-                    if (strpos($tok, '=') === false) { $i++; }
-                    continue;
-                }
-                $base[] = $tok;
-            }
-
-            // Disable robots fetching to avoid implicit robots.txt download
-            $base[] = '-e';
-            $base[] = 'robots=off';
-            // Ensure directory structure (host/path) is created for each URL
-            $base[] = '--force-directories';
+            // Legacy argv/flag stripping not required for mirrorer execution
 
             // Build set of included URLs
             $targets = array();

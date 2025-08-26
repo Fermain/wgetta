@@ -128,15 +128,8 @@ class Wgetta_Admin {
         }
     }
     
-    /**
-     * Display settings page
-     */
-    public function display_settings_page() {
-        include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-settings.php';
-    }
-    
-    // Legacy plan page removed
-    
+    // Legacy settings/plan pages removed
+
     public function display_plan_copy_page() {
         include_once WGETTA_PLUGIN_DIR . 'admin/partials/wgetta-admin-plan-copy.php';
     }
@@ -355,23 +348,7 @@ class Wgetta_Admin {
         return array('code' => $code, 'out' => trim($stdout . (strlen($stderr) ? "\n" . $stderr : '')));
     }
 
-    private function rrcopy($src, $dst) {
-        $src = rtrim($src, DIRECTORY_SEPARATOR);
-        $dst = rtrim($dst, DIRECTORY_SEPARATOR);
-        if (!is_dir($src)) { return; }
-        $items = scandir($src);
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') { continue; }
-            $from = $src . DIRECTORY_SEPARATOR . $item;
-            $to = $dst . DIRECTORY_SEPARATOR . $item;
-            if (is_dir($from)) {
-                if (!is_dir($to)) { wp_mkdir_p($to); }
-                $this->rrcopy($from, $to);
-            } else {
-                copy($from, $to);
-            }
-        }
-    }
+    
 
     /** Test GitLab connection */
     public function ajax_git_test() {
@@ -493,49 +470,44 @@ class Wgetta_Admin {
         wp_send_json($response);
     }
     
-    /**
-     * AJAX handler for enqueueing dry run
-     */
+    /** Dry run via PHP crawler */
     public function ajax_dry_run() {
         check_ajax_referer('wgetta_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-        
+        if (!current_user_can('manage_options')) { wp_die('Unauthorized'); }
         $response = array('success' => false, 'message' => '', 'job_id' => '');
-        
         try {
-            // Get saved command
             $cmd = get_option('wgetta_cmd', '');
-            if (empty($cmd)) {
-                throw new RuntimeException('No command configured');
-            }
-            
-            // Prepare argv
+            if ($cmd === '') { throw new RuntimeException('No command configured'); }
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
             $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
-            
-            // Make dry-run argv
-            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv($argv);
-            
-            // Create and run job
+            $seeds = array(); foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
+                }
+            }
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
+            $hosts = array(); foreach ($seeds as $s) { $h = parse_url($s, PHP_URL_HOST); if ($h) $hosts[] = $h; }
+            $hosts = array_values(array_unique($hosts));
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('dry-run');
-            $runner->run($argv);
-            
-            // Extract URLs
-            $urls = $runner->extract_urls();
-            
-            $response['success'] = true;
-            $response['job_id'] = $job_id;
-            $response['message'] = 'Dry run completed';
-            $response['data'] = array('urls' => $urls);
-            
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-crawler.php';
+            $crawler = new Wgetta_Crawler();
+            // Increase depth to better approximate wget --spider discovery
+            $urls = $crawler->discover($seeds, $hosts, 3, 5000, $log_file);
+            file_put_contents($job_dir . '/urls.json', json_encode($urls, JSON_PRETTY_PRINT));
+            $response['success'] = true; $response['job_id'] = $job_id; $response['message'] = 'Dry run completed'; $response['data'] = array('urls' => $urls);
         } catch (Exception $e) {
             $response['message'] = 'Dry run failed: ' . $e->getMessage();
         }
-        
         wp_send_json($response);
     }
     
@@ -618,11 +590,33 @@ class Wgetta_Admin {
             $cmd = get_option('wgetta_cmd', '');
             if (empty($cmd)) { throw new RuntimeException('No command configured'); }
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
-            $argv = Wgetta_Job_Runner::wgetta_make_dryrun_argv(Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd));
+            $argv = Wgetta_Job_Runner::wgetta_prepare_argv_or_die($cmd);
+            $seeds = array();
+            foreach ($argv as $tok) { if (preg_match('#^https?://#i', $tok)) { $seeds[] = $tok; } }
+            if (empty($seeds)) { $seeds = array(home_url('/')); }
+            // Also seed /wp-json/ per host
+            $jsonSeeds = array();
+            foreach ($seeds as $s) {
+                $p = wp_parse_url($s);
+                if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+                    $port = isset($p['port']) ? (':' . $p['port']) : '';
+                    $jsonSeeds[] = $p['scheme'] . '://' . $p['host'] . $port . '/wp-json/';
+                }
+            }
+            $seeds = array_values(array_unique(array_merge($seeds, $jsonSeeds)));
+            $hosts = array(); foreach ($seeds as $s) { $h = parse_url($s, PHP_URL_HOST); if ($h) { $hosts[] = $h; } }
+            $hosts = array_values(array_unique($hosts));
+
             $runner = new Wgetta_Job_Runner();
             $job_id = $runner->create_job('plan');
-            $runner->run($argv);
-            $urls = $runner->extract_urls();
+            $upload_dir = wp_upload_dir();
+            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
+            $log_file = $job_dir . '/stdout.log';
+
+            require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-crawler.php';
+            $crawler = new Wgetta_Crawler();
+            $urls = $crawler->discover($seeds, $hosts, 1, 2000, $log_file);
+
             // Apply saved patterns (server-side OR semantics)
             $patterns = get_option('wgetta_regex_patterns', array());
             if (is_array($patterns)) { $patterns = array_map('trim', $patterns); }
@@ -634,9 +628,8 @@ class Wgetta_Admin {
                 }
                 if (!$match) { $filtered[] = $u; }
             }
+
             // Save plan.csv
-            $upload_dir = wp_upload_dir();
-            $job_dir = $upload_dir['basedir'] . '/wgetta/jobs/' . $job_id;
             file_put_contents($job_dir . '/plan.csv', implode("\n", $filtered));
             $resp['success'] = true; $resp['job_id'] = $job_id; $resp['urls'] = $filtered;
         } catch (Exception $e) {
