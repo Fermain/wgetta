@@ -243,7 +243,17 @@ class Wgetta_Admin {
             // Clone shallow (legacy behavior)
             $res1 = $this->run_cmd(array('git', 'clone', '--depth', '1', $remote, $repo_dir));
             $log[] = $res1['out'];
-            if ($res1['code'] !== 0) { throw new RuntimeException('git clone failed'); }
+            if ($res1['code'] !== 0) {
+                $msg = $res1['out'];
+                if ($mask) { $msg = str_replace($mask, '***', $msg); }
+                throw new RuntimeException('git clone failed: ' . $msg);
+            }
+
+            // Log origin URL (sanitized)
+            $remoteUrl = $this->run_cmd(array('git', '-C', $repo_dir, 'remote', 'get-url', 'origin'));
+            $ru = $remoteUrl['out'];
+            if ($mask) { $ru = str_replace($mask, '***', $ru); }
+            $log[] = 'origin: ' . $ru;
 
             // Ensure committer identity (local repo only)
             $site_host = parse_url(home_url('/'), PHP_URL_HOST);
@@ -299,7 +309,7 @@ class Wgetta_Admin {
             $log[] = $res3['out'];
             $nothingToCommit = (strpos($res3['out'], 'nothing to commit') !== false);
 
-            // Create/force branch using template from settings
+            // Create or track branch using template from settings
             $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
             $date_str = date('Ymd-His');
             $replacements = array(
@@ -308,15 +318,24 @@ class Wgetta_Admin {
                 '{date}' => $date_str
             );
             $branch_name = strtr($template, $replacements);
-            // sanitize to a safe git ref (basic)
             $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
             $branch_name = trim($branch_name, '-/');
             if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
             $branch = $branch_name;
-            $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
+            $remote_has = $this->run_cmd(array('git', '-C', $repo_dir, 'ls-remote', '--heads', 'origin', $branch));
+            if ($remote_has['code'] === 0 && trim($remote_has['out']) !== '') {
+                // base local branch on origin to allow fast-forward push
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch, 'origin/' . $branch));
+            } else {
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
+            }
             $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', 'origin', $branch));
             $log[] = $res4['out'];
-            if ($res4['code'] !== 0) { throw new RuntimeException('git push failed'); }
+            if ($res4['code'] !== 0) {
+                $msg = $res4['out'];
+                if ($mask) { $msg = str_replace($mask, '***', $msg); }
+                throw new RuntimeException('git push failed: ' . $msg);
+            }
 
             // Clean up
             $this->rrmdir($repo_dir);
