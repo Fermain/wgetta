@@ -269,11 +269,38 @@ class Wgetta_Admin {
 
             // No extraheader; rely on credentialed remote
 
-            // Decide which files to include: only crawled files by default (from manifest)
-            // Optionally include metadata if toggle is set in settings (hidden setting)
+            // Prepare target branch BEFORE staging changes to ensure commits are based on correct tip
+            $status = null; $plan_name = '';
             require_once WGETTA_PLUGIN_DIR . 'includes/class-wgetta-job-runner.php';
             $runner = new Wgetta_Job_Runner();
             $runner->set_job($job_id);
+            $status = $runner->get_status();
+            $plan_name = is_array($status) && !empty($status['plan_name']) ? $status['plan_name'] : '';
+            $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
+            $date_str = date('Ymd-His');
+            $replacements = array(
+                '{plan_name}' => ($plan_name ?: $job_id),
+                '{job_id}' => $job_id,
+                '{date}' => $date_str
+            );
+            $branch_name = strtr($template, $replacements);
+            $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
+            $branch_name = trim($branch_name, '-/');
+            if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
+            $branch = $branch_name;
+            // If remote branch exists, base local branch on it to allow FF
+            $remote_has = $this->run_cmd(array('git', '-C', $repo_dir, 'ls-remote', '--heads', 'origin', $branch));
+            if ($remote_has['code'] === 0 && trim($remote_has['out']) !== '') {
+                // Fetch the remote branch tip (shallow) then base local branch on it
+                $fetch = $this->run_cmd(array('git', '-C', $repo_dir, 'fetch', '--depth', '1', 'origin', $branch . ':refs/remotes/origin/' . $branch));
+                $log[] = $fetch['out'];
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch, 'origin/' . $branch));
+            } else {
+                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
+            }
+
+            // Decide which files to include: only crawled files by default (from manifest)
+            // Optionally include metadata if toggle is set in settings (hidden setting)
             $manifest_files = $runner->generate_manifest();
             // Exclude known archives
             $manifest_files = array_values(array_filter($manifest_files, function($rel){
@@ -300,35 +327,10 @@ class Wgetta_Admin {
             $res2 = $this->run_cmd(array('git', '-C', $repo_dir, 'add', '-A'));
             $log[] = $res2['out'];
             // Commit; if nothing to commit, this exits non-zero; detect message
-            // Determine branch name from plan_name if present
-            $status = $runner->get_status();
-            $plan_name = is_array($status) && !empty($status['plan_name']) ? $status['plan_name'] : '';
-            $branch_slug = $plan_name ? sanitize_title($plan_name) : $job_id;
             $message = 'Wgetta deploy ' . ($plan_name ?: $job_id) . ' on ' . date('c');
             $res3 = $this->run_cmd(array('git', '-C', $repo_dir, 'commit', '-m', $message, '--author=Wp Wgetta <noreply@example.com>'));
             $log[] = $res3['out'];
             $nothingToCommit = (strpos($res3['out'], 'nothing to commit') !== false);
-
-            // Create or track branch using template from settings
-            $template = isset($settings['branch_template']) && $settings['branch_template'] !== '' ? $settings['branch_template'] : 'wgetta/{plan_name}';
-            $date_str = date('Ymd-His');
-            $replacements = array(
-                '{plan_name}' => ($plan_name ?: $job_id),
-                '{job_id}' => $job_id,
-                '{date}' => $date_str
-            );
-            $branch_name = strtr($template, $replacements);
-            $branch_name = preg_replace('/[^A-Za-z0-9._\-\/]+/', '-', $branch_name);
-            $branch_name = trim($branch_name, '-/');
-            if ($branch_name === '') { $branch_name = 'wgetta-' . $date_str; }
-            $branch = $branch_name;
-            $remote_has = $this->run_cmd(array('git', '-C', $repo_dir, 'ls-remote', '--heads', 'origin', $branch));
-            if ($remote_has['code'] === 0 && trim($remote_has['out']) !== '') {
-                // base local branch on origin to allow fast-forward push
-                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch, 'origin/' . $branch));
-            } else {
-                $this->run_cmd(array('git', '-C', $repo_dir, 'checkout', '-B', $branch));
-            }
             // Push current HEAD explicitly to remote branch ref to avoid local refspec issues
             $res4 = $this->run_cmd(array('git', '-C', $repo_dir, 'push', '-u', 'origin', 'HEAD:refs/heads/' . $branch));
             $log[] = $res4['out'];

@@ -235,6 +235,8 @@
                             currentPlan = resp.urls || [];
                             buildTreeAndList(currentPlan);
                             try { document.getElementById('step-review').open = true; } catch(e){}
+                            // Prepopulate Save Plan name with the loaded plan name
+                            $('#plan-name').val(name);
                             $('#delete-plan').show().data('plan', name);
                         }
                     });
