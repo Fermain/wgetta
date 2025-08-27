@@ -260,18 +260,29 @@ class Wgetta_Mirrorer {
         $path = '/' . ltrim($path, '/');
         $leaf = basename($path);
         $is_json = $this->is_json($content_type) || preg_match('#/wp-json/?$#i', $path);
+        $has_ext = (strpos($leaf, '.') !== false);
         if ($leaf === '' || $leaf === '/' || substr($path, -1) === '/') {
             $rel = $host . rtrim($path, '/') . ($is_json ? '/index.json' : '/index.html');
-        } else if (strpos($leaf, '.') === false) {
+        } else if (!$has_ext) {
             if ($content_type === null) {
                 $rel = $host . rtrim($path, '/') . '/index.html';
             } else {
                 $rel = $host . rtrim($path, '/') . ($is_json ? '/index.json' : '/index.html');
             }
         } else {
+            // Keep original filename with extension for assets
             $rel = $host . $path;
         }
-        if ($query !== '') { $rel = rtrim($rel, '/') . '/_q_' . md5($query) . '/index.html'; }
+        if ($query !== '') {
+            if ($has_ext) {
+                // Maintain original filename for assets with query strings
+                $dir = rtrim(dirname($path), '/');
+                if ($dir === '/' || $dir === '\\') { $dir = ''; }
+                $rel = $host . $dir . '/_q_' . md5($query) . '/' . $leaf;
+            } else {
+                $rel = rtrim($rel, '/') . '/_q_' . md5($query) . ($is_json ? '/index.json' : '/index.html');
+            }
+        }
         return ltrim($rel, '/');
     }
 
