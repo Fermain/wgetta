@@ -273,19 +273,7 @@ class Wgetta_Mirrorer {
             // Keep original filename with extension for assets
             $rel = $host . $path;
         }
-        if ($query !== '') {
-            if ($is_json) {
-                // For JSON API endpoints, ignore query to canonicalize (e.g., per_page)
-                // Keep rel as-is (index.json) to avoid odd paths like index.json/_q_*
-            } else if ($has_ext) {
-                // Maintain original filename for assets with query strings
-                $dir = rtrim(dirname($path), '/');
-                if ($dir === '/' || $dir === '\\') { $dir = ''; }
-                $rel = $host . $dir . '/_q_' . md5($query) . '/' . $leaf;
-            } else {
-                $rel = rtrim($rel, '/') . '/_q_' . md5($query) . '/index.html';
-            }
-        }
+        // Ignore query parameters in path mapping for canonical filenames (no _q_ variants)
         return ltrim($rel, '/');
     }
 
