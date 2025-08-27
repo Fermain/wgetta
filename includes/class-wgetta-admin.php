@@ -365,6 +365,13 @@ class Wgetta_Admin {
         $scheme = parse_url($base_url, PHP_URL_SCHEME) ?: 'https';
         $abs_base = rtrim($scheme . '://' . $host, '/');
 
+        // Flatten host directory to repo root if present
+        $host_dir = rtrim($repo_dir, '/\\') . DIRECTORY_SEPARATOR . $host;
+        if (is_dir($host_dir)) {
+            $this->move_tree_contents($host_dir, $repo_dir);
+            @rmdir($host_dir);
+        }
+
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($repo_dir, FilesystemIterator::SKIP_DOTS));
         foreach ($it as $file) {
             if (!$file->isFile()) { continue; }
@@ -375,25 +382,23 @@ class Wgetta_Admin {
             $content = @file_get_contents($path);
             if ($content === false || $content === '') { continue; }
 
-            // 1) Same-host absolute/protocol-relative -> root-relative
-            $patterns = array(
-                '#https?://' . preg_quote($host, '#') . '(/[^"\s>]*)#i',
-                '#//' . preg_quote($host, '#') . '(/[^"\s>]*)#i'
-            );
-            foreach ($patterns as $rx) {
-                $content = preg_replace($rx, '$1', $content);
-            }
+            // 1) Same-host absolute/protocol-relative (with optional port) -> root-relative
+            $h = preg_quote($host, '#');
+            $content = preg_replace('#https?://' . $h . '(?::\d+)?/#i', '/', $content);
+            $content = preg_replace('#https?://' . $h . '(?::\d+)?#i', '/', $content);
+            $content = preg_replace('#//' . $h . '(?::\d+)?/#i', '/', $content);
+            $content = preg_replace('#//' . $h . '(?::\d+)?#i', '/', $content);
 
-            // 2) Flatten any /host/ prefixes in attributes and text links
-            $content = preg_replace('#/(?:' . preg_quote($host, '#') . ')(/[^"\s>]*)#i', '$1', $content);
+            // 2) Flatten any /host(:port)/ prefixes
+            $content = preg_replace('#/' . $h . '(?::\d+)?/#i', '/', $content);
 
             // 3) Ensure canonical/og and sitemap/feed links are absolute
             // canonical
-            $content = preg_replace('#(<link[^>]+rel=["\"]canonical["\"][^>]*href=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+            $content = preg_replace('#(<link[^>]+rel=["\"]canonical["\"][^>]*href=["\"])(/[^"]*)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
             // og:url
-            $content = preg_replace('#(<meta[^>]+property=["\"]og:url["\"][^>]*content=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+            $content = preg_replace('#(<meta[^>]+property=["\"]og:url["\"][^>]*content=["\"])(/[^"]*)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
             // og:image
-            $content = preg_replace('#(<meta[^>]+property=["\"]og:image["\"][^>]*content=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+            $content = preg_replace('#(<meta[^>]+property=["\"]og:image["\"][^>]*content=["\"])(/[^"]*)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
 
             // 4) JSON-LD selected fields to absolute
             if ($ext === 'html') {
@@ -406,6 +411,21 @@ class Wgetta_Admin {
             }
 
             @file_put_contents($path, $content);
+        }
+    }
+
+    private function move_tree_contents($src, $dst) {
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+        foreach ($it as $item) {
+            $rel = substr($item->getPathname(), strlen(rtrim($src, '/\\')) + 1);
+            $target = rtrim($dst, '/\\') . DIRECTORY_SEPARATOR . $rel;
+            if ($item->isDir()) {
+                if (!is_dir($target)) { @wp_mkdir_p($target); }
+            } else {
+                $tdir = dirname($target);
+                if (!is_dir($tdir)) { @wp_mkdir_p($tdir); }
+                @copy($item->getPathname(), $target);
+            }
         }
     }
 
