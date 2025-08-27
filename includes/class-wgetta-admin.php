@@ -166,7 +166,8 @@ class Wgetta_Admin {
             'include_meta' => $include_meta,
             'committer_name' => $committer_name,
             'committer_email' => $committer_email,
-            'branch_template' => ($branch_template !== '' ? $branch_template : 'wgetta/{plan_name}')
+            'branch_template' => ($branch_template !== '' ? $branch_template : 'wgetta/{plan_name}'),
+            'base_url' => (isset($_POST['base_url']) && $_POST['base_url'] !== '' ? esc_url_raw($_POST['base_url']) : home_url('/'))
         ));
         wp_send_json(array('success' => true));
     }
@@ -323,6 +324,11 @@ class Wgetta_Admin {
                 if (is_file($src)) { copy($src, $dst); }
             }
 
+            // URL normalization stage: root-relative links and absolute where required
+            $settings = get_option('wgetta_gitlab', array());
+            $base_url = isset($settings['base_url']) && is_string($settings['base_url']) && $settings['base_url'] !== '' ? $settings['base_url'] : home_url('/');
+            $this->rewrite_urls_in_repo($repo_dir, $base_url);
+
             // git add/commit
             $res2 = $this->run_cmd(array('git', '-C', $repo_dir, 'add', '-A'));
             $log[] = $res2['out'];
@@ -351,6 +357,56 @@ class Wgetta_Admin {
             $resp['message'] = $e->getMessage();
         }
         wp_send_json($resp);
+    }
+
+    private function rewrite_urls_in_repo($repo_dir, $base_url) {
+        $host = parse_url($base_url, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') { return; }
+        $scheme = parse_url($base_url, PHP_URL_SCHEME) ?: 'https';
+        $abs_base = rtrim($scheme . '://' . $host, '/');
+
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($repo_dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $file) {
+            if (!$file->isFile()) { continue; }
+            $path = $file->getPathname();
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            // Only process text-like files
+            if (!in_array($ext, array('html','htm','css','js','json','xml','txt','rss','atom'), true)) { continue; }
+            $content = @file_get_contents($path);
+            if ($content === false || $content === '') { continue; }
+
+            // 1) Same-host absolute/protocol-relative -> root-relative
+            $patterns = array(
+                '#https?://' . preg_quote($host, '#') . '(/[^"\s>]*)#i',
+                '#//' . preg_quote($host, '#') . '(/[^"\s>]*)#i'
+            );
+            foreach ($patterns as $rx) {
+                $content = preg_replace($rx, '$1', $content);
+            }
+
+            // 2) Flatten any /host/ prefixes in attributes and text links
+            $content = preg_replace('#/(?:' . preg_quote($host, '#') . ')(/[^"\s>]*)#i', '$1', $content);
+
+            // 3) Ensure canonical/og and sitemap/feed links are absolute
+            // canonical
+            $content = preg_replace('#(<link[^>]+rel=["\"]canonical["\"][^>]*href=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+            // og:url
+            $content = preg_replace('#(<meta[^>]+property=["\"]og:url["\"][^>]*content=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+            // og:image
+            $content = preg_replace('#(<meta[^>]+property=["\"]og:image["\"][^>]*content=["\"])(/[^"\s>]+)(["\"])#i', '$1' . $abs_base . '$2$3', $content);
+
+            // 4) JSON-LD selected fields to absolute
+            if ($ext === 'html') {
+                $content = preg_replace('#("(?:@id|url|image|logo|contentUrl)"\s*:\s*")(/[^"\s]+)(")#i', '$1' . $abs_base . '$2$3', $content);
+            }
+
+            // 5) Sitemaps/feeds absolute URLs
+            if ($ext === 'xml' || $ext === 'rss' || $ext === 'atom') {
+                $content = preg_replace('#(<loc>)(/[^<]+)(</loc>)#i', '$1' . $abs_base . '$2$3', $content);
+            }
+
+            @file_put_contents($path, $content);
+        }
     }
 
     private function run_cmd($argv) {

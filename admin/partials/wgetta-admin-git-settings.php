@@ -10,7 +10,7 @@ $default_email = 'noreply@' . $site_host;
 $git = get_option('wgetta_gitlab', array(
 	'url' => '', 'project_id' => '', 'token' => '', 'include_meta' => 0,
 	'committer_name' => $default_name, 'committer_email' => $default_email,
-	'branch_template' => 'wgetta/{plan_name}'
+	'branch_template' => 'wgetta/{plan_name}', 'base_url' => home_url('/')
 ));
 ?>
 
@@ -50,6 +50,13 @@ $git = get_option('wgetta_gitlab', array(
 				</td>
 			</tr>
 			<tr>
+				<th scope="row"><label for="gitlab-base-url">Production Base URL</label></th>
+				<td>
+					<input type="text" id="gitlab-base-url" class="regular-text" value="<?php echo esc_attr(isset($git['base_url']) && $git['base_url'] !== '' ? $git['base_url'] : home_url('/')); ?>" placeholder="https://site.com/" />
+					<p class="description">Used for absolute URLs (canonical, OG, sitemaps). Defaults to this site's home URL.</p>
+				</td>
+			</tr>
+			<tr>
 				<th scope="row">Include metadata files</th>
 				<td>
 					<label><input type="checkbox" id="gitlab-include-meta" value="1" <?php checked(!empty($git['include_meta'])); ?>/> Include status.json, urls.json, command.txt, manifest.txt, plan.csv</label>
@@ -79,7 +86,8 @@ $git = get_option('wgetta_gitlab', array(
 			include_meta: $('#gitlab-include-meta').is(':checked') ? 1 : 0,
 			committer_name: $('#gitlab-committer-name').val(),
 			committer_email: $('#gitlab-committer-email').val(),
-			branch_template: $('#gitlab-branch-template').val()
+			branch_template: $('#gitlab-branch-template').val(),
+			base_url: $('#gitlab-base-url').val()
 		}, function(resp){
 			$s.removeClass('is-active');
 			alert(resp && resp.success ? 'Saved' : (resp && resp.message ? resp.message : 'Save failed'));

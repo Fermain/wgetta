@@ -112,7 +112,9 @@ class Wgetta_Mirrorer {
             $abs = $this->to_absolute($base_url, $href);
             if (!$abs) { continue; }
             $mapped = $this->map_url_to_path($abs, 'text/html');
-            $el->setAttribute('href', $this->to_root_relative($mapped));
+            $qp = wp_parse_url($abs);
+            $qstr = isset($qp['query']) && $qp['query'] !== '' ? ('?' . $qp['query']) : '';
+            $el->setAttribute('href', $this->to_root_relative($mapped) . $qstr);
             $pages[] = $abs;
         }
 
@@ -140,7 +142,9 @@ class Wgetta_Mirrorer {
                         if (!$abs) { continue; }
                         $assets[] = $abs;
                         $mapped = $this->map_url_to_path($abs, null);
-                        $rebuilt[] = $this->to_root_relative($mapped) . (isset($parts[1]) ? (' ' . $parts[1]) : '');
+                        $qp = wp_parse_url($abs);
+                        $qstr = isset($qp['query']) && $qp['query'] !== '' ? ('?' . $qp['query']) : '';
+                        $rebuilt[] = $this->to_root_relative($mapped) . $qstr + (isset($parts[1]) ? (' ' . $parts[1]) : '');
                     }
                     if (!empty($rebuilt)) { $el->setAttribute('srcset', implode(', ', $rebuilt)); }
                 } else {
@@ -152,12 +156,16 @@ class Wgetta_Mirrorer {
                         if ($rel === 'stylesheet' || $rel === 'preload' || $rel === 'icon') {
                             $assets[] = $abs;
                             $mapped = $this->map_url_to_path($abs, null);
-                            $el->setAttribute('href', $this->to_root_relative($mapped));
+                            $qp = wp_parse_url($abs);
+                            $qstr = isset($qp['query']) && $qp['query'] !== '' ? ('?' . $qp['query']) : '';
+                            $el->setAttribute('href', $this->to_root_relative($mapped) . $qstr);
                         }
                     } else {
                         $assets[] = $abs;
                         $mapped = $this->map_url_to_path($abs, null);
-                        $el->setAttribute($p[1], $this->to_root_relative($mapped));
+                        $qp = wp_parse_url($abs);
+                        $qstr = isset($qp['query']) && $qp['query'] !== '' ? ('?' . $qp['query']) : '';
+                        $el->setAttribute($p[1], $this->to_root_relative($mapped) . $qstr);
                     }
                 }
             }
@@ -175,7 +183,9 @@ class Wgetta_Mirrorer {
                     if ($abs) {
                         $assets[] = $abs;
                         $mapped = $this->map_url_to_path($abs, null);
-                        $rebuilt = str_replace($u, $this->to_root_relative($mapped), $rebuilt);
+                        $qp = wp_parse_url($abs);
+                        $qstr = isset($qp['query']) && $qp['query'] !== '' ? ('?' . $qp['query']) : '';
+                        $rebuilt = str_replace($u, $this->to_root_relative($mapped) . $qstr, $rebuilt);
                     }
                 }
                 $node->setAttribute('style', $rebuilt);
