@@ -15,6 +15,19 @@ class Wgetta_Crawler {
 			if ($u) { $queue[] = array($u, 0); $seen[$u] = true; }
 		}
 
+
+		// Sitemap sweep: attempt to include URLs from Yoast or core sitemaps to avoid JS-only pagination gaps
+		try {
+			$roots = $this->roots_from_seeds((array) $seed_urls);
+			$sitemap_urls = $this->sweep_sitemaps($roots, $allowed, max(0, $max_pages - count($found)), $log_file);
+			foreach ($sitemap_urls as $su) {
+				if (!isset($seen[$su])) { $found[] = $su; $seen[$su] = true; }
+				if (count($found) >= $max_pages) { break; }
+			}
+		} catch (Exception $e) {
+			$this->log($log_file, 'SITEMAP ERR ' . $e->getMessage());
+		}
+
 		while (!empty($queue) && count($found) < $max_pages) {
 			list($url, $depth) = array_shift($queue);
 			$this->log($log_file, 'GET ' . $url);
@@ -254,6 +267,79 @@ class Wgetta_Crawler {
 	private function log($log_file, $line) {
 		if (!$log_file) { return; }
 		@file_put_contents($log_file, $line . "\n", FILE_APPEND);
+	}
+
+	private function roots_from_seeds($seed_urls) {
+		$roots = array();
+		foreach ((array) $seed_urls as $s) {
+			$p = wp_parse_url($s);
+			if ($p && !empty($p['scheme']) && !empty($p['host'])) {
+				$port = isset($p['port']) ? (':' . $p['port']) : '';
+				$roots[] = $p['scheme'] . '://' . $p['host'] . $port . '/';
+			}
+		}
+		return array_values(array_unique($roots));
+	}
+
+	private function sweep_sitemaps($roots, $allowed_hosts, $budget, $log_file) {
+		$collected = array();
+		$hosts = array_values(array_unique(array_filter(array_map(function($u){ return parse_url($u, PHP_URL_HOST); }, (array) $roots))));
+		foreach ((array) $roots as $root) {
+			foreach (array('sitemap_index.xml', 'sitemap.xml') as $entry) {
+				$url = rtrim($root, '/') . '/' . $entry;
+				if (!$this->is_allowed($url, $allowed_hosts)) { continue; }
+				$this->log($log_file, 'SITEMAP ' . $url);
+				$res = wp_remote_get($url, array('timeout' => 10, 'redirection' => 3, 'headers' => array('User-Agent' => 'Wgetta-Crawler ' . home_url('/'))));
+				if (is_wp_error($res)) { continue; }
+				$code = wp_remote_retrieve_response_code($res);
+				if ($code >= 300 && $code < 400) {
+					$loc = wp_remote_retrieve_header($res, 'location');
+					if (is_string($loc) && $loc !== '') {
+						$url = $loc;
+						$res = wp_remote_get($url, array('timeout' => 10, 'redirection' => 3));
+						if (is_wp_error($res)) { continue; }
+					}
+				}
+				$body = wp_remote_retrieve_body($res);
+				if (!is_string($body) || $body === '') { continue; }
+				$xml = @simplexml_load_string($body);
+				if ($xml === false) { continue; }
+				// If this is a sitemap index
+				if (isset($xml->sitemap)) {
+					foreach ($xml->sitemap as $sm) {
+						$loc = trim((string) $sm->loc);
+						if ($loc && $this->is_allowed($loc, $allowed_hosts)) {
+							$collected = array_merge($collected, $this->parse_urlset($loc, $allowed_hosts, $budget - count($collected), $log_file));
+							if (count($collected) >= $budget) { break 2; }
+						}
+					}
+				} else {
+					// Treat as urlset
+					$collected = array_merge($collected, $this->parse_urlset($url, $allowed_hosts, $budget - count($collected), $log_file));
+					if (count($collected) >= $budget) { break; }
+				}
+			}
+		}
+		return array_values(array_unique($collected));
+	}
+
+	private function parse_urlset($url, $allowed_hosts, $budget, $log_file) {
+		$urls = array();
+		$res = wp_remote_get($url, array('timeout' => 10, 'redirection' => 3, 'headers' => array('User-Agent' => 'Wgetta-Crawler ' . home_url('/'))));
+		if (is_wp_error($res)) { return $urls; }
+		$body = wp_remote_retrieve_body($res);
+		$xml = @simplexml_load_string($body);
+		if ($xml === false) { return $urls; }
+		if (isset($xml->url)) {
+			foreach ($xml->url as $entry) {
+				$loc = trim((string) $entry->loc);
+				if ($loc !== '' && $this->is_allowed($loc, $allowed_hosts)) {
+					$urls[] = $loc;
+					if (count($urls) >= $budget) { break; }
+				}
+			}
+		}
+		return $urls;
 	}
 }
 
