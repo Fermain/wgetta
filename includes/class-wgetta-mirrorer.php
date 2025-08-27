@@ -274,13 +274,16 @@ class Wgetta_Mirrorer {
             $rel = $host . $path;
         }
         if ($query !== '') {
-            if ($has_ext) {
+            if ($is_json) {
+                // For JSON API endpoints, ignore query to canonicalize (e.g., per_page)
+                // Keep rel as-is (index.json) to avoid odd paths like index.json/_q_*
+            } else if ($has_ext) {
                 // Maintain original filename for assets with query strings
                 $dir = rtrim(dirname($path), '/');
                 if ($dir === '/' || $dir === '\\') { $dir = ''; }
                 $rel = $host . $dir . '/_q_' . md5($query) . '/' . $leaf;
             } else {
-                $rel = rtrim($rel, '/') . '/_q_' . md5($query) . ($is_json ? '/index.json' : '/index.html');
+                $rel = rtrim($rel, '/') . '/_q_' . md5($query) . '/index.html';
             }
         }
         return ltrim($rel, '/');
